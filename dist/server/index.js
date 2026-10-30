@@ -61,9 +61,10 @@ async function cardanoProxy(request, fetcher = fetch) {
     }
   }
   try {
-    const response = await fetcher("https://preview.koios.rest/api/v1/" + endpoint + url.search, { method: request.method, headers: { "Content-Type": endpoint === "submittx" ? "application/cbor" : "application/json" }, body, redirect: "error", signal: AbortSignal.timeout(15e3) });
+    const response = await fetcher("https://preview.koios.rest/api/v1/" + endpoint + url.search, { method: request.method, headers: { "Content-Type": endpoint === "submittx" ? "application/cbor" : "application/json" }, body, redirect: "manual", signal: AbortSignal.timeout(15e3) });
     return new Response(response.body, { status: response.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-  } catch {
+  } catch (e) {
+    console.error("Preview bridge failure", e.name, e.message);
     return Response.json({ error: "Preview provider unavailable. Please retry." }, { status: 502 });
   }
 }
