@@ -57,6 +57,13 @@ Open the printed URL, normally http://localhost:8787. Use `CARELOOP_PORT=8789` t
 
 Create a clinic account and copy a program's invitation code. Create a participant account and join with that code, or use a private guest demo to explore both roles. Authentication uses ordinary email/password accounts. Accounts and invitation codes are demo access controls; they do not verify professional credentials or patient identity.
 
+## Demo operations
+
+Open **Demo readiness** in the app to check the sponsor heartbeat and remaining budget. Check-in now includes enrollment creation and private recovery controls before submission. The screen labels the separate Masumi service and prior receipts explicitly.
+
+- [Always-on worker deployment](deploy/README.md): Docker Compose package with persistent journal, restart policy and heartbeat health check. Requires a separately provisioned host.
+- [Live rehearsal and ≤2.5-minute recording guide](docs/DEMO-REHEARSAL.md): both real outcomes and narration.
+
 ## Run the sponsor relay
 
 The public website persists reports and the relay queue. The relay is a separate operator process that signs **Preprod-only** transactions with a dedicated sponsor wallet. It makes authenticated outbound requests; it needs no public inbound port or tunnel. For this hackathon the operator may run it on their computer, which must remain awake and connected.

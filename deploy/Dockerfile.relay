@@ -1,0 +1,11 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY src/ ./src/
+COPY scripts/sponsor-relay.mjs scripts/relay-health.mjs ./scripts/
+COPY contracts/plutus.json ./contracts/plutus.json
+COPY public/zk/verification_key.json ./public/zk/verification_key.json
+USER node
+CMD ["node", "--use-env-proxy", "scripts/sponsor-relay.mjs"]

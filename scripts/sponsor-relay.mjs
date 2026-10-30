@@ -154,6 +154,7 @@ try{
   do{
    try{
     await api('/api/sponsor/heartbeat',{workerId:journal.workerId});
+    await writeFile(path.join(directory,'health.json'),JSON.stringify({pid:process.pid,network:'Preprod',lastHeartbeat:Date.now()}),{mode:0o600});
     const lease=await api('/api/sponsor/lease',{workerId:journal.workerId});
     if(lease.job){try{await processJob(lease.job,lease.leaseToken);}catch(error){output({event:'job_waiting',reportId:lease.job.reportId,message:safeError(error)});}}
    }catch(error){output({event:'relay_waiting',message:safeError(error)});}

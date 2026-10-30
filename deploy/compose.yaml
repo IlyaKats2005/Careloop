@@ -1,0 +1,35 @@
+# One persistent worker on an always-on Linux host. Never scale this service.
+services:
+  sponsor-relay:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.relay
+    init: true
+    restart: unless-stopped
+    user: "${RELAY_UID:-1000}:${RELAY_GID:-1000}"
+    env_file:
+      - ${RELAY_ENV_FILE:?Set RELAY_ENV_FILE to the private relay environment file}
+    environment:
+      SPONSOR_STATE_DIR: /state
+      SPONSOR_SEED_FILE: /private/seed.txt
+      SPONSOR_BLOCKFROST_KEY_FILE: /private/blockfrost.key
+    volumes:
+      - ${RELAY_STATE_DIR:?Set RELAY_STATE_DIR to the migrated journal directory}:/state
+      - ${RELAY_PRIVATE_DIR:?Set RELAY_PRIVATE_DIR to a private directory}:/private:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 90s
+    healthcheck:
+      test: [CMD, node, scripts/relay-health.mjs]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '3'

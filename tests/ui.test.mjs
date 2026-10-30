@@ -195,3 +195,26 @@ test('missing recipient stops submission before spending sponsor funds',async()=
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);ui.run("draft.recipientAddress=''");await ui.run('submitReport()');
  assert.match(ui.element('#formError').textContent,/receiving address/);assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,0);
 });
+
+test('demo readiness distinguishes an unreachable service and previous receipts from a fresh payment',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('demoReady')");await tick();
+ assert.match(ui.html(),/Sponsor payment worker: Online/);assert.match(ui.html(),/does not create another Masumi purchase/);assert.match(ui.html(),/Previous website payout/);
+ backend.hooks.request=call=>{if(call.path==='/api/sponsor/status')throw Error('network unavailable');};
+ await ui.run('loadSponsorStatus()');assert.match(ui.html(),/Connection not verified/);assert.doesNotMatch(ui.html(),/Sponsor payment worker: Online/);
+ assert.equal(backend.requests.filter(r=>r.method==='POST'&&r.path!=='/api/demo/start').length,0);
+});
+
+test('check-in exposes enrollment creation and recovery without submitting or spending',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('checkin')");
+ assert.match(ui.html(),/Create private enrollment/);assert.match(ui.html(),/Restore recovery file/);
+ ui.run('prepareEnrollment()');assert.match(ui.html(),/Download private recovery file/);
+ assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,0);
+});
+
+test('an already-online sponsor status is refreshed when the report is pending',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ const r=backend.state.reports[0];r.payout={state:'queued',recipientAddress:'addr_test1fixture'};
+ backend.hooks.request=call=>call.path==='/api/sponsor/status'?Response.json({configured:true,online:false,lastSeen:'2026-10-30T19:24:00Z',remainingBudget:3}):undefined;
+ await ui.run('pollPayout(payoutWatch)');
+ assert.equal(ui.data('sponsorStatus.online'),false);assert.match(ui.html(),/sponsor service is offline/);assert.equal(ui.proofCalls.length,0);
+});

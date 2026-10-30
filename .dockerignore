@@ -1,0 +1,15 @@
+**
+!package.json
+!package-lock.json
+!src/
+!src/**
+!scripts/
+!scripts/sponsor-relay.mjs
+!scripts/relay-health.mjs
+!contracts/
+!contracts/plutus.json
+!public/
+!public/zk/
+!public/zk/verification_key.json
+!deploy/
+!deploy/Dockerfile.relay
