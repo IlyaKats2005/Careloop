@@ -1,3 +1,4 @@
+import {NETWORK,NETWORK_MAGIC} from './network.js';
 const priorities=new Set(['routine','review_requested','priority_review']);
 const allowedFields=new Set(['medication','status','dose','lastDose','missed','changes','symptoms','urgent','impact','hydration','details','contact','notes']);
 export function validateInput(body){
@@ -57,7 +58,7 @@ export async function analyze(answers,env,fetcher=fetch){
 export async function api(request,env={}){
   const url=new URL(request.url);
   const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
-  if(url.pathname==='/api/status')return json({ai:{configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser + local Aiken tests',setup:'development-only'},chain:{connected:false,network:'preprod',message:'No wallet, funds or deployment configured'},mode:'fictional-demo'});
+  if(url.pathname==='/api/status')return json({ai:{configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser + local Aiken tests',setup:'development-only'},chain:{connected:false,network:NETWORK.toLowerCase(),networkMagic:NETWORK_MAGIC,masumiNetwork:NETWORK.toLowerCase(),message:'Patient rewards and Masumi target Cardano Preprod. Connect a wallet and check the pool in My rewards.'},mode:'fictional-demo'});
   if(url.pathname!=='/api/analyze')return json({error:'Not found'},404);
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   if(request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return json({error:'Origin not allowed'},403);

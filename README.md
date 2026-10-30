@@ -1,6 +1,6 @@
 # Careloop — private research-reward demo
 
-Fictional questionnaire → external AI suggestion → human clinic approval → browser-generated Groth16 proof → wallet-signed Cardano Preview reward.
+Fictional questionnaire → external AI suggestion → human clinic approval → browser-generated Groth16 proof → wallet-signed Cardano Preprod reward.
 
 ## Implemented
 
@@ -14,12 +14,12 @@ Fictional questionnaire → external AI suggestion → human clinic approval →
 ## Not connected / not production
 
 - Hosted Gemini calls are configured and tested. Local development needs a server-side provider key. There is **no silent fake response fallback**.
-- Cardano Preview funding and claiming transactions are implemented and evaluated with Lucid. Submission requires the user’s connected wallet signature. No live transaction is claimed without a confirmed hash. Browser session storage preserves the enrollment across reloads; private recovery export is available. On-chain state enforces duplicate prevention within a funded pool.
+- Cardano Preprod funding and claiming transactions are implemented and evaluated with Lucid. Submission requires the user’s connected wallet signature. No live transaction is claimed without a confirmed hash. Browser session storage preserves the enrollment across reloads; private recovery export is available. On-chain state enforces duplicate prevention within a funded pool.
 - No real clinic authentication, secure medical record store, or identity deduplication. Role switching and the eight-entry approval batch are fictional demonstration controls, not access control. Clinic and patient run in the same browser for the demo.
 - No clinical validation, private payment rail, or anonymity guarantee. Program, period, amount, recipient and nullifier are public. Small batches, timing, known wallets, repeated recipients and network metadata can reveal connections.
 - Development-only single-machine setup. Do not use real funds. Review circuit and upstream hash parameters, perform an independent security audit and a suitable ceremony before any production deployment.
 - AI requests may be processed/stored by the external model provider. Only fictional input is permitted. Removing a name does not make a clinical narrative anonymous.
-- Masumi/Sokosumi service-payment integration is separate and is not yet wired into this reward pool.
+- Both the Masumi/Sokosumi service-payment flow and the patient-reward pool now target **Cardano Preprod**. They still use separate contracts and payment flows: Masumi pays the AI service; this pool rewards the participant. Sharing a network does not connect them automatically, and the Masumi payment is not evidence of a live patient claim.
 
 ## Run locally
 
@@ -45,13 +45,19 @@ Alternative OpenRouter model: `openrouter/free`. It may route to different free 
 
 For the hosted Site, set `GEMINI_API_KEY`, `AI_PROVIDER` and `AI_MODEL` using the Sites server environment configuration and redeploy. Never add it to client JavaScript or `.openai/hosting.json`.
 
+## Moving from the earlier Preview demo
+
+The patient-reward flow now targets Preprod. Old Preview enrollments, recovery files, balances and pool UTxOs are **not automatically migrated** and must not be reused as Preprod state. Create a new enrollment on Preprod, use a Preprod wallet with network magic **1**, and fund a new pool with Preprod test ADA. Keep any old recovery file separate; its pool remains on the original network.
+
+No live patient reward is established by this network change. A signed transaction and confirmed on-chain payout are still required.
+
 ## Demo walkthrough
 
 1. Participant → My rewards → Create enrollment.
 2. Switch to Clinic → review Alex's Week 04 report.
 3. Click Analyze fictional report (requires the server key). Inspect the suggestion; it does not change approval.
 4. Confirm eligibility and approve the reward.
-5. Open the site in a wallet-enabled browser. Switch the wallet to **Preview** (not Preprod), obtain free test ADA, and connect it from My rewards.
+5. Open the site in a wallet-enabled browser. Set the wallet to **Preprod** (network magic **1**), obtain free Preprod test ADA, and connect it from My rewards. A generic testnet address or network ID alone does not distinguish Preprod from other Cardano test networks.
 6. Download the private recovery file. Prepare a 20-test-ADA pool. Review outputs and fee, then personally sign and submit in your wallet. The wallet needs a pure ADA UTxO of at least 25 ADA plus separate collateral; use its send/split feature if needed.
 7. Refresh on-chain state after confirmation. Download recovery again to include the deployed pool configuration.
 8. Connect the recipient wallet (the same wallet is supported for this demo), generate the proof, and prepare a 2-test-ADA claim. Personally sign and submit. Refresh after confirmation.
@@ -92,9 +98,9 @@ The circuit checks a depth-3 approved Merkle tree. Its leaf commits to the enrol
 
 The pool is identified by a unique NFT, minted once using an input UTxO. The clinic alone can replace the approved root, with all other state and value preserved. A claim preserves the NFT/script and remaining assets, pays the exact reward to an address controlled by the proof-bound payment key (base or enterprise address) and appends the nullifier. Fees come from a separate funding input. A maximum of eight claims keeps the experimental datum bounded. This version has one fixed reporting period per pool, no top-up/close/recovery action, and no batching scalability claim.
 
-The browser chooses the clinic signer from the connected wallet and an available seed UTxO, parameterises both scripts with the matching verification key, and builds the NFT-bearing pool transaction. Enrollment approval creates a random domain. Lucid evaluates transactions with current Preview protocol parameters from public Koios, then the user signs. No mainnet deployment is supported. The 20-test-ADA pool reserves 4 ADA and has no refund path; only disposable test ADA should be used.
+The browser chooses the clinic signer from the connected wallet and an available seed UTxO, parameterises both scripts with the matching verification key, and builds the NFT-bearing pool transaction. Enrollment approval creates a random domain. Lucid evaluates transactions with current Preprod protocol parameters from public Koios, then the user signs. No mainnet deployment is supported. The 20-test-ADA pool reserves 4 ADA and has no refund path; only disposable test ADA should be used.
 
-`tests/cardano.test.mjs` executes the actual serialized funding and claim transactions through Lucid’s Cardano emulator, including Plutus evaluation, checks exact payout/state, and rejects tampered proofs, wrong wallets and duplicate claims. This is not evidence of a live Preview transaction; that requires a wallet signature and network confirmation.
+`tests/cardano.test.mjs` executes the actual serialized funding and claim transactions through Lucid’s Cardano emulator, including Plutus evaluation, checks exact payout/state, and rejects tampered proofs, wrong wallets and duplicate claims. This is not evidence of a live Preprod transaction; that requires a wallet signature and network confirmation.
 
 The scope/domain must be unique for the intended logical pool; duplicate prevention is within that pool, not global identity deduplication. Do not initialise multiple independently funded pools for the same program/period and claim they share spent state.
 

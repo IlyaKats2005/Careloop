@@ -1,12 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';
 import {Emulator,generateEmulatorAccount,Koios} from '@lucid-evolution/lucid';
 import {groth16} from 'snarkjs';
-import {Lucid,preparePool,prepareClaim,readPool,paymentKey,transactionSummary} from '../src/cardano.js';
+import {Lucid,preparePool,prepareClaim,readPool,paymentKey,transactionSummary,NETWORK,KOIOS} from '../src/cardano.js';
 import {config,commitment,leaf,tree,witness} from '../src/zk-core.js';
 test('real serialized Plutus transactions: fund, proof claim, duplicate and tamper',async()=>{
  const clinic=generateEmulatorAccount({lovelace:100000000n}),patient=generateEmulatorAccount({lovelace:100000000n});
- const params=process.env.CARELOOP_LIVE_PARAMS?await new Koios('https://preview.koios.rest/api/v1').getProtocolParameters():undefined;
- const em=new Emulator([clinic,patient],params);const l=await Lucid(em,'Preview');l.selectWallet.fromSeed(clinic.seedPhrase);
+ const params=process.env.CARELOOP_LIVE_PARAMS?await new Koios(KOIOS).getProtocolParameters():undefined;
+ const em=new Emulator([clinic,patient],params);const l=await Lucid(em,NETWORK);l.selectWallet.fromSeed(clinic.seedPhrase);
  const blueprint=JSON.parse(await readFile('contracts/plutus.json')),vk=JSON.parse(await readFile('public/zk/verification_key.json'));
  const secret='45678',leaves=Array.from({length:8},(_,i)=>leaf(commitment(String(i+10))));leaves[2]=leaf(commitment(secret));const path=tree(leaves,2);
  const {tx,dep}=await preparePool(l,blueprint,vk,{...config,root:path.root});
