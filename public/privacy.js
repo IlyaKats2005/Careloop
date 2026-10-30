@@ -95,6 +95,49 @@
     return { ...c, ...path, secret: secret2, recipient: field(recipient).toString(), nullifier, binding: hash(nullifier, recipient).toString() };
   }
 
+  // src/reward-status.js
+  var identifier = (value) => typeof value === "string" && value.length > 0 && value.length <= 200 && value.trim() === value;
+  var programIdentifier = (value) => typeof value === "string" && /^[A-Z][A-Z0-9_-]{1,31}$/.test(value);
+  var canonical = (value) => {
+    if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) return false;
+    try {
+      return field(value).toString() === value;
+    } catch {
+      return false;
+    }
+  };
+  function asciiFieldId(value) {
+    let encoded = 0n;
+    for (const byte of new TextEncoder().encode(value)) encoded = encoded << 8n | BigInt(byte);
+    return field(encoded).toString();
+  }
+  function programFieldId(programId) {
+    if (!programIdentifier(programId)) throw Error("A valid program ID is required for reward approval.");
+    return asciiFieldId(programId);
+  }
+  function periodFieldId(periodId) {
+    if (typeof periodId !== "string" || !/^\d{4}-(?:W\d{2}|F\d{2}|\d{2}(?:-\d{2})?)$/.test(periodId)) throw Error("A valid reporting period ID is required for reward approval.");
+    return asciiFieldId(periodId);
+  }
+  function rewardStatusForReport(reportId, { approval: approval2, submitted: submitted2, chainState: chainState2 } = {}) {
+    if (!identifier(reportId) || !approval2 || approval2.reportId !== reportId || !programIdentifier(approval2.programId)) return null;
+    const approved = { state: "approved", label: "Approved \xB7 not paid" };
+    const matchingClaim = submitted2?.kind === "claim" && submitted2.reportId === reportId && submitted2.programId === approval2.programId && canonical(approval2.nullifier) && submitted2.nullifier === approval2.nullifier && typeof submitted2.hash === "string" && /^[0-9a-f]{64}$/i.test(submitted2.hash);
+    if (!matchingClaim) return approved;
+    const pending2 = { state: "submitted", label: "Claim submitted \xB7 confirmation pending", txHash: submitted2.hash };
+    if (submitted2.confirmed !== true || !Array.isArray(chainState2?.used) || !chainState2.used.includes(submitted2.nullifier)) return pending2;
+    const expected = { root: approval2.root, program: approval2.c?.program, period: approval2.c?.period, amount: approval2.c?.amount, domain: approval2.c?.domain };
+    if (approval2.periodId != null) {
+      try {
+        if (expected.period !== periodFieldId(approval2.periodId)) return pending2;
+      } catch {
+        return pending2;
+      }
+    }
+    if (expected.program !== programFieldId(approval2.programId) || expected.amount !== "2000000" || Object.entries(expected).some(([key, value]) => !canonical(value) || chainState2[key] !== value)) return pending2;
+    return { state: "confirmed", label: "Paid \xB7 2 test ADA (Preprod)", txHash: submitted2.hash };
+  }
+
   // src/privacy-ui.js
   var secret = null;
   var approval = null;
@@ -111,17 +154,58 @@
   var submitted = null;
   var chainState = null;
   var savedKey = STORAGE_KEY;
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(savedKey) || "null");
-    if (saved) {
-      assertRecoveryNetwork(saved);
-      ({ secret, approval, dep, submitted } = saved);
-      if (secret) window.careloopCommitment = commitment(secret);
-    }
-  } catch {
+  var rewardOwnerId = null;
+  var rewardStorageValid = true;
+  function resetRewardState() {
+    secret = null;
+    approval = null;
+    claim = null;
+    log = [];
+    publicClaim = null;
+    sdk = null;
+    lucid = null;
+    wallet = null;
+    walletAddress = null;
+    dep = null;
+    pending = null;
+    submitted = null;
+    chainState = null;
+    rewardStorageValid = true;
+    delete window.careloopCommitment;
   }
+  function restoreSavedReward() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(savedKey) || "null");
+      if (!saved) return;
+      assertRecoveryNetwork(saved);
+      if ((saved.ownerId ?? null) !== rewardOwnerId) throw Error("Reward owner mismatch");
+      const restoredCommitment = saved.secret ? commitment(saved.secret) : null;
+      ({ secret, approval, dep, submitted } = saved);
+      if (submitted) submitted = { ...submitted, confirmed: false };
+      if (restoredCommitment) window.careloopCommitment = restoredCommitment;
+    } catch {
+      resetRewardState();
+      rewardStorageValid = false;
+      log.push("Saved reward data could not be restored and has been preserved. Download it before restoring a valid Preprod recovery file.");
+    }
+  }
+  restoreSavedReward();
   var esc = (s) => window.careloopEscape(String(s));
-  var persist = () => sessionStorage.setItem(savedKey, JSON.stringify({ network: NETWORK, networkMagic: NETWORK_MAGIC, secret, approval, dep, submitted }));
+  var persist = () => {
+    if (rewardStorageValid) sessionStorage.setItem(savedKey, JSON.stringify({ network: NETWORK, networkMagic: NETWORK_MAGIC, ownerId: rewardOwnerId, secret, approval, dep, submitted }));
+  };
+  window.careloopRewardBusy = () => busy;
+  window.careloopSetRewardOwner = (ownerId = null) => {
+    if (ownerId !== null && (typeof ownerId !== "string" || !ownerId.trim() || ownerId.length > 200 || ownerId.trim() !== ownerId)) throw Error("Invalid reward account.");
+    if (ownerId === rewardOwnerId) return;
+    if (busy) throw Error("Wait for the current reward action to finish before switching accounts.");
+    persist();
+    resetRewardState();
+    rewardOwnerId = ownerId;
+    savedKey = ownerId === null ? STORAGE_KEY : STORAGE_KEY + ":account:" + ownerId;
+    restoreSavedReward();
+    window.render?.();
+  };
   var say = (s) => {
     log.push(s);
     window.render();
@@ -146,13 +230,14 @@
   function button(label, fn, disabled = false) {
     return `<button class="btn secondary" onclick="${fn}" ${disabled || busy ? "disabled" : ""}>${label}</button>`;
   }
-  window.privacyPanel = () => `<section class="card" style="margin-top:22px"><div class="eyebrow">CARDANO PREPROD \xB7 ON-CHAIN REWARDS</div><h2>Prove approval. Claim test ADA.</h2><p>Real Cardano transactions on <strong>Preprod testnet</strong>. Your wallet signs; this app never receives its seed phrase. Gemini reviews fictional reports; the clinic approves eligibility.</p><div class="steps"><div class="${secret ? "on" : ""}">1. Enrollment</div><div class="${approval ? "on" : ""}">2. Approval & funding</div><div class="${claim ? "on" : ""}">3. ZK proof</div><div class="${chainState?.used.length ? "on" : ""}">4. On-chain claim</div></div>
+  window.careloopRewardStatus = (reportId) => rewardStatusForReport(reportId, { approval, submitted, chainState });
+  window.privacyPanel = () => `<section class="card" style="margin-top:22px"><div class="eyebrow">CARDANO PREPROD \xB7 ON-CHAIN REWARDS</div><h2>Prove approval. Claim test ADA.</h2><p>Real Cardano transactions on <strong>Preprod testnet</strong>. Your wallet signs; this app never receives its seed phrase. Gemini reviews fictional reports; the clinic approves eligibility.</p><div class="steps"><div class="${secret ? "on" : ""}">1. Enrollment</div><div class="${approval ? "on" : ""}">2. Approval & funding</div><div class="${claim ? "on" : ""}">3. ZK proof</div><div class="${window.careloopRewardStatus(approval?.reportId)?.state === "confirmed" ? "on" : ""}">4. On-chain claim</div></div>
 <h3>Wallet</h3>${walletAddress ? `<p class="proof-json">Connected: ${esc(walletAddress)}</p>` : `<p>Use a Cardano wallet extension in your browser, switched to Preprod. The ChatGPT browser may not have an extension.</p>`}
 <div class="flex" style="flex-wrap:wrap;gap:10px">${wallets().map((w, i) => button("Connect " + esc(w.name), `chainConnect(${i})`)).join("") || '<span class="muted">No wallet extension detected. Open this site in the browser where your Cardano wallet is installed.</span>'}${button("Refresh wallets", "window.render()")}${button("Check Preprod network", "chainCheckNetwork()")}</div>
 <p><a href="https://docs.cardano.org/cardano-testnets/tools/faucet/" target="_blank" rel="noopener noreferrer">Get free Preprod test ADA \u2197</a> \xB7 Funding needs a pure-ADA UTxO \u226525 test ADA and separate collateral. Claims need test ADA for fees/collateral. Network reads and submitted transactions go to Koios.</p>
 <h3>Enrollment & approval</h3><p>${secret ? "Enrollment saved in this browser tab. The secret is not sent to Gemini, Koios or the blockchain." : "Create a fictional enrollment for Alex / P-024, then switch to Clinic and approve a report."}</p>
-<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Create enrollment", "zkEnroll()", !!secret)}${button("Download recovery file", "zkBackup()", !secret)}<label class="btn secondary">Restore recovery file<input type="file" accept="application/json" onchange="zkRestore(this.files[0])" style="max-width:200px" ${busy ? "disabled" : ""}></label></div>
-<p>${approval ? "Approved for " + esc(approval.periodLabel) + ". Eight synthetic approvals in this batch." : "Awaiting clinic approval."}</p><p class="muted">The connected funding wallet acts as the clinic for this fictional demo. The public role switch is not clinic authentication.</p>
+<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Create enrollment", "zkEnroll()", !!secret || !rewardStorageValid)}${button("Download recovery file", "zkBackup()", !secret && rewardStorageValid)}<label class="btn secondary">Restore recovery file<input type="file" accept="application/json" onchange="zkRestore(this.files[0])" style="max-width:200px" ${busy ? "disabled" : ""}></label></div>
+<p>${approval ? "Approved for " + esc(approval.periodLabel) + (approval.reportId ? " \xB7 Report " + esc(approval.reportId) + " \xB7 Program " + esc(approval.programId) : " \xB7 Legacy approval, not linked to a report") + ". Eight synthetic approvals in this batch. Fixed demo reward: 2 test ADA for this reporting period." : "Awaiting clinic approval."}</p><p class="muted">The connected funding wallet acts as the clinic for this fictional demo. Selecting the Clinic role does not verify clinic membership.</p>
 <h3>Reward pool</h3><p>Fund <strong>20 test ADA</strong>: up to eight rewards of 2 test ADA, plus 4 test ADA retained in the contract. This experimental pool has no refund function. Only use disposable test ADA.</p>
 <div class="flex" style="flex-wrap:wrap;gap:10px">${button("Prepare 20 ADA pool", "chainFund()", !approval || !lucid || !!dep)}${button("Refresh on-chain state", "chainRefresh()", !dep || !lucid)}${dep && !submitted && !chainState ? button("Discard unsubmitted pool", "chainDiscard()") : ""}</div>
 ${dep ? `<p class="proof-json">Pool address: ${esc(dep.address)}<br>State NFT: ${esc(dep.unit)}</p><p>${chainState ? "Confirmed pool \xB7 " + chainState.used.length + " claims recorded." : "Pool configuration saved; refresh to check confirmation."}</p>` : ""}
@@ -162,6 +247,7 @@ ${pending ? `<div class="info"><h3>Review transaction before signing</h3><p>${es
 ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}/transaction/${esc(submitted.hash)}">View ${esc(submitted.kind)} transaction \u2197</a> \xB7 ${submitted.confirmed ? "Confirmed on Preprod" : "Submitted; confirmation pending"}</p>` : ""}
 <div aria-live="polite">${busy ? '<p class="info">Working\u2026 keep this tab open.</p>' : ""}${log.map((s) => '<div class="audit">' + esc(s) + "</div>").join("")}</div><small>Experimental development proving setup. Use fictional data only. Enrollment recovery files contain your private enrollment secret. Keep them private. Closing this tab can clear its local session.</small></section>`;
   window.zkEnroll = () => {
+    if (!rewardStorageValid) throw Error("Existing reward recovery data needs inspection. Download it before restoring a valid Preprod recovery file.");
     if (secret) return;
     secret = randomSecret();
     window.careloopCommitment = commitment(secret);
@@ -171,13 +257,15 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
   window.zkApprove = (report) => {
     if (!secret) throw Error("Open My rewards and create enrollment first.");
     if (approval) throw Error("A report is already approved in this session.");
-    const c = { ...config, domain: randomSecret(), period: String(Number(report.period.match(/\d+/)?.[0] || 5)) };
+    if (typeof report?.id !== "string" || !report.id.trim() || typeof report.period !== "string") throw Error("A saved report and reporting period are required.");
+    const programId = report.programId ?? report.program?.id;
+    const c = { ...config, program: programFieldId(programId), domain: randomSecret(), period: report.periodId == null ? String(Number(report.period.match(/\d+/)?.[0] || 5)) : periodFieldId(report.periodId) };
     const leaves = Array.from({ length: 8 }, () => leaf(commitment(randomSecret()), c));
     const index = crypto.getRandomValues(new Uint8Array(1))[0] % 8;
     leaves[index] = leaf(window.careloopCommitment, c);
-    approval = { ...tree(leaves, index), c, periodLabel: report.period };
+    approval = { ...tree(leaves, index), c, reportId: report.id, programId, periodId: report.periodId ?? null, nullifier: hash(secret, scope(c)).toString(), periodLabel: report.period };
     persist();
-    log.push("Fictional clinic approval created. Funding transaction will commit this root on-chain.");
+    log.push("Fictional clinic approval created for report " + report.id + ". Funding transaction will commit this root on-chain.");
   };
   window.chainCheckNetwork = () => run(async () => {
     sdk ??= await import("/chain/wallet.js");
@@ -232,7 +320,7 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     const p = pending;
     const signed = await p.tx.sign.withWallet().complete();
     const hash2 = await signed.submit();
-    submitted = { hash: hash2, kind: p.kind, confirmed: false };
+    submitted = { hash: hash2, kind: p.kind, confirmed: false, ...p.kind === "claim" ? { reportId: p.reportId, programId: p.programId, nullifier: p.nullifier } : {} };
     pending = null;
     persist();
     log.push("Submitted to Preprod. No confirmation claimed yet; use Refresh on-chain state.");
@@ -262,7 +350,7 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
   window.chainClaim = () => run(async () => {
     if (!claim || !dep || !lucid) throw Error("Connect wallet, fund pool and generate proof first.");
     const tx = await sdk.prepareClaim(lucid, dep, claim, walletAddress);
-    pending = { tx, kind: "claim", summary: sdk.transactionSummary(tx), address: walletAddress };
+    pending = { tx, kind: "claim", summary: sdk.transactionSummary(tx), address: walletAddress, reportId: approval?.reportId ?? null, programId: approval?.programId ?? null, nullifier: claim.publicSignals[1] };
     log.push("Claim passed script evaluation. Review and sign to submit it.");
   });
   window.zkTamper = () => run(async () => {
@@ -287,20 +375,22 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     if (secret || dep) throw Error("Restore into a fresh browser tab before creating an enrollment.");
     if (file.size > 1e5) throw Error("Recovery file too large.");
     const s = assertRecoveryNetwork(JSON.parse(await file.text()));
-    commitment(s.secret);
+    const restoredCommitment = commitment(s.secret);
     if (s.approval) {
       if (s.approval.siblings?.length !== 3 || s.approval.directions?.length !== 3) throw Error("Invalid recovery path");
     }
-    secret = s.secret;
-    approval = s.approval;
-    submitted = s.submitted || null;
-    dep = null;
+    let restoredDep = null;
     if (s.dep) {
       sdk ??= await import("/chain/wallet.js");
       const [bp, vk] = await Promise.all(["/zk/plutus.json", "/zk/verification_key.json"].map((u) => fetch(u).then((r) => r.json())));
-      dep = sdk.deployment(bp, vk, s.dep.seed, s.dep.clinic);
+      restoredDep = sdk.deployment(bp, vk, s.dep.seed, s.dep.clinic);
     }
-    window.careloopCommitment = commitment(secret);
+    secret = s.secret;
+    approval = s.approval;
+    submitted = s.submitted ? { ...s.submitted, confirmed: false } : null;
+    dep = restoredDep;
+    window.careloopCommitment = restoredCommitment;
+    rewardStorageValid = true;
     log.push("Enrollment restored. Connect wallet and refresh pool state.");
   });
 })();

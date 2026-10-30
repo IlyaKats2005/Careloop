@@ -1,21 +1,47 @@
-# Careloop — private research-reward demo
+# Careloop — configurable research follow-up demo
 
 Fictional questionnaire → external AI suggestion → human clinic approval → browser-generated Groth16 proof → wallet-signed Cardano Preprod reward.
 
 ## Implemented
 
-- Existing participant/clinic UI, with separate AI and clinic actions.
+- Participant and clinic workspaces, email/password accounts, and an optional guest demo.
+- Configurable programs with their own questionnaire topics, schedule, review focus and report history. GLP-1 follow-up is one of three starting examples.
+- Submission automatically requests AI analysis. AI status, human clinic review and payment confirmation are shown separately; preloaded examples are kept outside submitted history.
 - Server-only Gemini / OpenRouter adapter (`POST /api/analyze`), with a configured Gemini model or optional OpenRouter free model, with timeouts, bounded inputs, JSON/evidence checks and explicit errors. The model cannot approve payment.
 - Real **Groth16 over BLS12-381** proof generation and verification in the participant browser. The secret and Merkle path are not sent to the API.
 - Circom approval-membership circuit, including program/period/domain scoping, a deterministic nullifier and payout-key binding.
 - Compiled Aiken Plutus V3 reward validator, plus one-shot state-NFT minting policy. Actual generated proofs are tested in Aiken.
 - Demonstrations of duplicate-claim and changed-recipient rejection.
 
+## Accounts and data
+
+`src/auth.js` implements registration, login, logout and session lookup. Hosted account records live in the Sites-provisioned Cloudflare D1 `DB` binding. Passwords are salted and hashed with PBKDF2; sessions use random tokens in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie, with only token hashes stored in D1. The account role selects a participant or clinic **demo** workspace. It does not verify a clinic, professional credentials or the identity of a patient. Email verification and password reset are not implemented.
+
+Questionnaires, AI results, custom programs and clinic demo decisions remain in browser `sessionStorage`, separated by account ID or guest state. They survive reloads in the same tab, but are **not shared across accounts, tabs or devices** and are not a secure medical record store. Wallet enrollment and pool recovery state are also separated by account or guest in the tab. Keep a private recovery export before closing a tab with a funded pool.
+
+The complete participant-to-clinic demonstration can be explored in one guest session by switching demo workspaces. Creating separate participant and clinic accounts does not create a shared study database or make a participant's reports appear in the other account.
+
+## Programs and AI routing
+
+`src/programs.js` defines and validates the starting program registry. Clinic demo users can create or edit programs through **Programs → Create program**: name, reporting cadence, symptom/experience topics, optional medication choices, concern checkboxes, question wording and AI review focus. Empty medication choices remove treatment and dosing questions. The current on-chain reward remains fixed at **2 test ADA**; creating a program does not deploy or fund a contract.
+
+Every submitted report retains a snapshot of its program configuration. Future program edits affect new check-ins, while AI retries use the original report's configuration. The server validates that configuration and sends it as untrusted context alongside the answers to the configured external model. Programs currently share the Gemini demo model with different review context; dedicated trained models and clinical validation remain future work. Client configuration cannot supply a model endpoint, API key or a claim that a model is clinically validated.
+
+## Report workflow
+
+1. A participant completes the selected program's questionnaire and confirms that the data is fictional.
+2. Submission saves the report and starts AI analysis. A failure remains visible and retryable; it never becomes a fabricated result.
+3. The clinic reviews the original answers and any AI suggestion, then records its own decision. Concern checkboxes are rule flags, not AI conclusions or completed clinical reviews.
+4. The clinic separately approves eligibility and completion. Symptoms do not automatically remove the reward, and approval does not move money.
+5. The sponsor funds the reward pool; the participant prepares a proof and signs a claim. A report is shown as paid only after its own bound claim transaction is confirmed and its nullifier appears in the matching on-chain pool state.
+
+Preloaded examples are read-only illustrations. They do not represent submitted reports, AI calls or payments. The public AI endpoint continues to accept explicit fictional guest-demo input; password login does not turn it into a production clinical service.
+
 ## Not connected / not production
 
 - Hosted Gemini calls are configured and tested. Local development needs a server-side provider key. There is **no silent fake response fallback**.
 - Cardano Preprod funding and claiming transactions are implemented and evaluated with Lucid. Submission requires the user’s connected wallet signature. No live transaction is claimed without a confirmed hash. Browser session storage preserves the enrollment across reloads; private recovery export is available. On-chain state enforces duplicate prevention within a funded pool.
-- No real clinic authentication, secure medical record store, or identity deduplication. Role switching and the eight-entry approval batch are fictional demonstration controls, not access control. Clinic and patient run in the same browser for the demo.
+- Account authentication is implemented, but there is no verified clinic membership, secure medical record store, shared clinic inbox or identity deduplication. Guest role switching and the eight-entry approval batch are fictional demonstration controls. Clinic and patient run in the same browser session for the complete demo.
 - No clinical validation, private payment rail, or anonymity guarantee. Program, period, amount, recipient and nullifier are public. Small batches, timing, known wallets, repeated recipients and network metadata can reveal connections.
 - Development-only single-machine setup. Do not use real funds. Review circuit and upstream hash parameters, perform an independent security audit and a suitable ceremony before any production deployment.
 - AI requests may be processed/stored by the external model provider. Only fictional input is permitted. Removing a name does not make a clinical narrative anonymous.
@@ -43,6 +69,10 @@ npm run dev
 
 Open http://localhost:8787. Existing public proving artifacts are committed, so no ceremony is required to try the demo.
 
+The lightweight local server does not provide a D1 binding. Guest mode works locally; registration and password login return `503 AUTH_STORAGE_UNAVAILABLE` until a compatible database is supplied. Auth tests apply the migration to an isolated SQLite database through a D1-compatible adapter.
+
+For hosting, `.openai/hosting.json` declares `"d1":"DB"`. The schema-only migrations and journal are in `drizzle/`; the build and Sites package include them under `dist/.openai/drizzle`. Sites provisions the binding and applies pending migrations before uploading the Worker. Do not edit an applied migration or create tables during request handling.
+
 To enable the AI, create a Gemini API key, put it in an **untracked** `.env` using `.env.example`, and launch:
 
 ```sh
@@ -63,18 +93,18 @@ No live patient reward is established by this network change. A signed transacti
 
 ## Demo walkthrough
 
-1. Participant → My rewards → Create enrollment.
-2. Switch to Clinic → review Alex's Week 04 report.
-3. Click Analyze fictional report (requires the server key). Inspect the suggestion; it does not change approval.
-4. Confirm eligibility and approve the reward.
+1. Choose **Try participant demo** to explore the full flow in one browser tab, or create an email/password account to try account login.
+2. Select a program and submit a fictional check-in. AI analysis starts automatically when the server key is configured. Inspect its status and suggestion; neither changes clinic approval.
+3. Open the clinic demo workspace and review the submitted report. Record a review note, then separately confirm eligibility and approve the reward. Enrollment is created when needed; My rewards also exposes enrollment and recovery controls.
+4. Optionally use **Programs → Create program** to change the questionnaire and review focus. New programs have separate report histories; their AI remains an untrained demo model.
 5. Open the site in a wallet-enabled browser. Set the wallet to **Preprod** (network magic **1**), obtain free Preprod test ADA, and connect it from My rewards. A generic testnet address or network ID alone does not distinguish Preprod from other Cardano test networks.
 6. Download the private recovery file. Prepare a 20-test-ADA pool. Review outputs and fee, then personally sign and submit in your wallet. The wallet needs a pure ADA UTxO of at least 25 ADA plus separate collateral; use its send/split feature if needed.
 7. Refresh on-chain state after confirmation. Download recovery again to include the deployed pool configuration.
 8. Connect the recipient wallet (the same wallet is supported for this demo), generate the proof, and prepare a 2-test-ADA claim. Personally sign and submit. Refresh after confirmation.
 9. A second preparation of the same claim is rejected from the on-chain nullifier. Test changed recipient checks proof binding locally.
-10. The explorer link shows the submitted transaction. The UI distinguishes submission from confirmation.
+10. The explorer link shows the submitted transaction. The UI distinguishes approval, claim submission and confirmed payment for the corresponding report.
 
-Only one approved report per session is supported. Eight entries form the synthetic batch; they do not represent eight real independent patients. Enrollment, approval and pool configuration survive reload in session storage, but questionnaires remain fictional in-memory examples. Closing the tab may clear the enrollment; keep the recovery file private.
+Only one approved report and one reward pool per account/guest tab state are supported. Eight entries form the synthetic batch; they do not represent eight real independent patients. Questionnaires, enrollment, approval and pool configuration survive reload in session storage. Closing the tab may clear that state; keep the recovery file private. The confirmed backend test receipts do not mean that a newly submitted website report has been paid.
 
 ## Tests
 
