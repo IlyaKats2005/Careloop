@@ -1,1 +1,28 @@
-{"name":"careloop","version":"0.2.0","private":true,"type":"module","scripts":{"dev":"node scripts/dev.mjs","build":"node scripts/build.mjs","test":"node --test tests/*.test.mjs","zk:setup":"node scripts/zk-setup.mjs"},"dependencies":{"@lucid-evolution/lucid":"^0.8.9","ffjavascript":"0.3.1","snarkjs":"0.7.6"},"devDependencies":{"@aiken-lang/aiken":"1.1.24","@noble/curves":"^1.9.7","circom2":"0.2.23","esbuild":"0.25.12","esbuild-plugin-wasm":"^1.1.0"}}
+{
+  "name": "careloop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "zk:setup": "node scripts/zk-setup.mjs",
+    "test:masumi": "node --test integrations/masumi/*.test.mjs",
+    "relay:check": "node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs --check",
+    "relay": "node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs"
+  },
+  "dependencies": {
+    "@lucid-evolution/lucid": "^0.8.9",
+    "ffjavascript": "0.3.1",
+    "snarkjs": "0.7.6",
+    "@scure/base": "1.2.6"
+  },
+  "devDependencies": {
+    "@aiken-lang/aiken": "1.1.24",
+    "@noble/curves": "^1.9.7",
+    "circom2": "0.2.23",
+    "esbuild": "0.25.12",
+    "esbuild-plugin-wasm": "^1.1.0"
+  }
+}

@@ -402,6 +402,64 @@
       window.render?.();
     }
   };
+  window.careloopReceiverWallets = () => wallets().map((w) => ({ id: w.id, name: w.name }));
+  window.careloopReceivingAddress = () => walletAddress;
+  window.careloopValidateRecipient = async (value) => {
+    const address = String(value || "").trim();
+    sdk ??= await import("/chain/wallet.js");
+    sdk.paymentKey(address);
+    return address;
+  };
+  window.careloopConnectReceiver = async (index) => {
+    if (busy) throw Error("Wait for the current proof or wallet action.");
+    const w = wallets()[index];
+    if (!w) throw Error("Wallet extension unavailable. Paste a Preprod receiving address.");
+    busy = true;
+    window.render?.();
+    try {
+      const api = await window.cardano[w.id].enable();
+      if (await api.getNetworkId() !== NETWORK_ID) throw Error("Switch your wallet to Cardano Preprod. Mainnet addresses are not accepted.");
+      sdk ??= await import("/chain/wallet.js");
+      const reader = await sdk.Lucid(new sdk.Koios(location.origin + "/cardano"), NETWORK);
+      reader.selectWallet.fromAPI(api);
+      const address = await reader.wallet().address();
+      sdk.paymentKey(address);
+      wallet = api;
+      lucid = reader;
+      walletAddress = address;
+      return address;
+    } finally {
+      busy = false;
+      window.render?.();
+    }
+  };
+  window.careloopBuildSponsoredProof = async (report, recipientAddress) => {
+    if (busy) throw Error("Wait for the current proof or wallet action.");
+    if (!rewardStorageValid) throw Error("Restore a valid private enrollment recovery file first.");
+    const next = cloudRewardApproval(report);
+    if (!next) throw Error("The saved report does not have a reward authorization.");
+    if (!secret || commitment(secret) !== next.commitment) throw Error("Restore this enrollment\u2019s private recovery file in My rewards, then retry the live payment.");
+    const expected = report.payout?.recipientAddress || report.recipientAddress;
+    if (!expected || recipientAddress !== expected) throw Error("The receiving address differs from the submitted report.");
+    const owner = rewardOwnerId;
+    busy = true;
+    window.render?.();
+    try {
+      sdk ??= await import("/chain/wallet.js");
+      const recipient = BigInt("0x" + sdk.paymentKey(recipientAddress)).toString();
+      const w = witness(secret, { root: next.root, siblings: next.siblings, directions: next.directions }, recipient, next.c);
+      const result = await window.snarkjs.groth16.fullProve(w, "/zk/reward.wasm", "/zk/reward.zkey", null, {}, { singleThread: true });
+      const response = await fetch("/zk/verification_key.json");
+      if (response.ok === false) throw Error("Could not load the proof verification key.");
+      const vk = await response.json();
+      if (!await window.snarkjs.groth16.verify(vk, result.publicSignals, result.proof)) throw Error("Private proof verification failed. No claim was sent.");
+      if (owner !== rewardOwnerId) throw Error("The account changed while creating the proof.");
+      return { proof: result.proof, publicSignals: result.publicSignals };
+    } finally {
+      busy = false;
+      window.render?.();
+    }
+  };
   window.careloopRewardStatus = (reportId) => rewardStatusForReport(reportId, { approval, submitted: transactions.claim || submitted, chainState });
   window.careloopChainSnapshot = () => {
     const safe = (r) => r ? { txHash: r.hash, confirmed: r.confirmed === true, source: r.source || "local" } : null;
@@ -424,7 +482,7 @@
   window.chainSyncCloud = () => run(async () => {
     for (const record of Object.values(transactions)) if (record?.syncPending) await saveCloudRecord(record);
   });
-  window.privacyPanel = () => `<section class="card" style="margin-top:22px"><div class="eyebrow">CARDANO PREPROD \xB7 ON-CHAIN REWARDS</div><h2>Prove approval. Claim test ADA.</h2><p>Real Cardano transactions on <strong>Preprod testnet</strong>. Your wallet signs; this app never receives its seed phrase. Gemini reviews fictional reports; the clinic approves eligibility.</p><div class="steps"><div class="${secret ? "on" : ""}">1. Enrollment</div><div class="${approval ? "on" : ""}">2. Approval & funding</div><div class="${claim ? "on" : ""}">3. ZK proof</div><div class="${window.careloopRewardStatus(approval?.reportId)?.state === "confirmed" ? "on" : ""}">4. On-chain claim</div></div>
+  window.privacyPanel = () => `<section class="card" style="margin-top:22px"><div class="eyebrow">CARDANO PREPROD \xB7 ON-CHAIN REWARDS</div><h2>Prove approval. Claim test ADA.</h2><p>Real Cardano transactions on <strong>Preprod testnet</strong>. Your wallet signs; this app never receives its seed phrase. Gemini reviews fictional reports; the completion policy authorizes eligible submissions. Clinics resolve holds.</p><div class="steps"><div class="${secret ? "on" : ""}">1. Enrollment</div><div class="${approval ? "on" : ""}">2. Approval & funding</div><div class="${claim ? "on" : ""}">3. ZK proof</div><div class="${window.careloopRewardStatus(approval?.reportId)?.state === "confirmed" ? "on" : ""}">4. On-chain claim</div></div>
 <h3>Wallet</h3>${walletAddress ? `<p class="proof-json">Connected: ${esc(walletAddress)}</p>` : `<p>Use a Cardano wallet extension in your browser, switched to Preprod. The ChatGPT browser may not have an extension.</p>`}
 <div class="flex" style="flex-wrap:wrap;gap:10px">${wallets().map((w, i) => button("Connect " + esc(w.name), `chainConnect(${i})`)).join("") || '<span class="muted">No wallet extension detected. Open this site in the browser where your Cardano wallet is installed.</span>'}${button("Refresh wallets", "window.render()")}${button("Check Preprod network", "chainCheckNetwork()")}</div>
 <p><a href="https://docs.cardano.org/cardano-testnets/tools/faucet/" target="_blank" rel="noopener noreferrer">Get free Preprod test ADA \u2197</a> \xB7 Funding needs a pure-ADA UTxO \u226525 test ADA and separate collateral. Claims need test ADA for fees/collateral. Network reads and submitted transactions go to Koios.</p>

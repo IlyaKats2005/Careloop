@@ -184,3 +184,21 @@ test('account restoration rejects mismatched owners and Preview while preserving
   assert.throws(()=>b.window.zkEnroll(),/recovery data needs inspection/);
   b.window.careloopSetRewardOwner(null);assert.equal(b.saved(key),wrongOwner);const preview=JSON.stringify({network:'Preview',networkMagic:2,ownerId:'account-a',secret:'123'});b.storage.set(key,preview);b.window.careloopSetRewardOwner('account-a');assert.equal(b.window.careloopCommitment,undefined);assert.equal(b.saved(key),preview);b.window.careloopSetRewardOwner(null);assert.equal(b.saved(key),preview);
 });
+
+
+test('sponsored proof uses only the matching local enrollment and binds the saved receiving address without wallet signing',async()=>{
+ const b=await browser(),w=b.window;w.careloopSetRewardOwner('patient');w.zkEnroll();
+ const report=cloudReport(w.careloopCommitment);report.recipientAddress='recipient';report.payout={state:'awaiting_proof',recipientAddress:'recipient'};
+ const result=await w.careloopBuildSponsoredProof(report,'recipient');
+ assert.equal(b.fixture.proofCalls,1);assert.equal(result.publicSignals[0],report.rewardApproval.root);assert.equal(result.publicSignals[5],BigInt('0x'+'a'.repeat(56)).toString());
+ assert.deepEqual(Object.keys(result).sort(),['proof','publicSignals']);assert.equal(result.secret,undefined);assert.equal(result.siblings,undefined);assert.equal(result.commitment,undefined);assert.equal(w.careloopRewardBusy(),false);assert.deepEqual(b.fixture.submissions,[]);
+ await assert.rejects(()=>w.careloopBuildSponsoredProof(report,'other-address'),/differs/);assert.equal(b.fixture.proofCalls,1);
+ const wrong=cloudReport(commitment('999999'),'R-wrong');wrong.recipientAddress='recipient';await assert.rejects(()=>w.careloopBuildSponsoredProof(wrong,'recipient'),/recovery file/);assert.equal(b.fixture.proofCalls,1);
+ w.careloopSetRewardOwner('different-patient');await assert.rejects(()=>w.careloopBuildSponsoredProof(report,'recipient'),/recovery file/);assert.equal(b.fixture.proofCalls,1);
+});
+
+test('receiving-wallet connection works without a funded participant wallet and keeps mainnet blocked',async()=>{
+ const b=await browser(),w=b.window;assert.equal(w.careloopReceiverWallets()[0].name,'Fixture wallet');
+ assert.equal(await w.careloopConnectReceiver(0),'recipient');assert.equal(w.careloopReceivingAddress(),'recipient');assert.deepEqual(b.fixture.submissions,[]);
+ w.cardano.fixture.enable=async()=>({getNetworkId:async()=>1});await assert.rejects(()=>w.careloopConnectReceiver(0),/Mainnet/);assert.equal(w.careloopRewardBusy(),false);
+});

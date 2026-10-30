@@ -2,6 +2,7 @@ import {NETWORK,NETWORK_MAGIC} from './network.js';
 import {DEFAULT_PROGRAM_ID,getProgram,normalizeProgram,programAIContext} from './programs.js';
 import {authAPI} from './auth.js';
 import {dataAPI} from './data-api.js';
+import {sponsorAPI} from './payment-jobs.js';
 const priorities=new Set(['routine','review_requested','priority_review']);
 const allowedFields=new Set(['medication','status','dose','lastDose','missed','changes','symptoms','urgent','impact','hydration','details','contact','notes']);
 export function validateProgramInput(body){
@@ -80,6 +81,7 @@ function reserveAnalysisQuota(request,env){
 export async function api(request,env={}){
   const url=new URL(request.url);
   const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  const sponsorResponse=await sponsorAPI(request,env);if(sponsorResponse)return sponsorResponse;
   const authResponse=await authAPI(request,env);if(authResponse)return authResponse;
   const dataResponse=await dataAPI(request,env,{analyze:(answers,settings,fetcher,program)=>reserveAnalysisQuota(request,settings)||analyze(answers,settings,fetcher,program)});if(dataResponse)return dataResponse;
   if(url.pathname==='/api/status')return json({ai:{configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser + local Aiken tests',setup:'development-only'},chain:{connected:false,network:NETWORK.toLowerCase(),networkMagic:NETWORK_MAGIC,masumiNetwork:NETWORK.toLowerCase(),message:'Patient rewards and Masumi target Cardano Preprod. Connect a wallet and check the pool in My rewards.'},mode:'fictional-demo'});

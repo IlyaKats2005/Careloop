@@ -1,0 +1,14 @@
+{
+  "name": "careloop-masumi-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "worker": "node --use-env-proxy --env-file=.env worker.mjs",
+    "api": "node --use-env-proxy --env-file=.env --env-file=.local/mps-runtime.env agent-api.mjs",
+    "test": "node --test *.test.mjs"
+  }
+}

@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+.local/
+docs/*state.json
+*.key
+*.log
+node_modules/
