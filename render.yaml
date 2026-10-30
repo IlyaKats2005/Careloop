@@ -1,0 +1,30 @@
+# Prepared configuration. Creating this service incurs Render charges.
+services:
+  - type: worker
+    name: careloop-preprod-relay
+    runtime: node
+    plan: 1c-2g
+    region: frankfurt
+    numInstances: 1
+    autoDeployTrigger: off
+    buildCommand: npm ci --omit=dev --ignore-scripts
+    startCommand: node --use-env-proxy scripts/render-relay.mjs
+    disk:
+      name: careloop-relay-state
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: SPONSOR_START_ENABLED
+        value: 'false'
+      - key: SPONSOR_SITE_URL
+        value: https://careloop-study-prototype.perasperaadastra3008.chatgpt.site
+      - key: SPONSOR_RELAY_TOKEN
+        sync: false
+      - key: SPONSOR_STATE_DIR
+        value: /var/data/sponsor-relay
+      - key: SPONSOR_MAX_JOBS
+        value: '4'
+      - key: SPONSOR_MAX_SPEND_ADA
+        value: '100'
