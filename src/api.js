@@ -45,6 +45,7 @@ export async function analyze(answers,env,fetcher=fetch){
     if(model!=='openrouter/free'&&!model.endsWith(':free'))return {status:503,body:{error:'FREE_MODEL_REQUIRED',message:'This demo permits only free OpenRouter models.'}};
     response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:0,max_tokens:1800,messages:[{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify(answers)}]}),signal:AbortSignal.timeout(45000)});
   }else throw Error('Unsupported provider');
+  if(response.status===402)return {status:503,body:{error:'AI_CREDITS_DEPLETED',message:'Gemini reports that this project’s prepaid credits are depleted. The clinic can still review the report; no AI analysis or approval was produced.'}};
   if(!response.ok)return {status:response.status===429?429:502,body:{error:'AI_PROVIDER_UNAVAILABLE',message:response.status===429?'Model quota reached. Retry later.':'AI provider rejected the request. Check the server key and model. No approval was issued.'}};
   raw=await response.json();
   content=provider==='gemini'?raw.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join(''):raw.choices?.[0]?.message?.content;
