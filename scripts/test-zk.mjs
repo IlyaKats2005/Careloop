@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {groth16,wtns} from 'snarkjs';
+import {bls12_381 as bls} from '@noble/curves/bls12-381';
+import {commitment,leaf,tree,witness,config,signals,acceptClaim,FIELD} from '../src/zk-core.js';
+const secret='123456789',leaves=Array.from({length:8},(_,i)=>leaf(commitment(String(i+999))));leaves[3]=leaf(commitment(secret));
+const path=tree(leaves,3),w=witness(secret,path,'12345');
+console.log('Generating a real BLS12-381 proof…');
+const result=await groth16.fullProve(w,'public/zk/reward.wasm','public/zk/reward.zkey',null,{}, {singleThread:true});
+assert.deepEqual(result.publicSignals,signals(w));
+const vk=JSON.parse(await readFile('public/zk/verification_key.json'));
+assert.equal(await groth16.verify(vk,result.publicSignals,result.proof),true);
+for(const [name,index] of [['root',0],['nullifier',1],['program',2],['period',3],['amount',4],['recipient',5],['domain',6],['binding',7]]){
+ const changed=[...result.publicSignals];changed[index]=(BigInt(changed[index])+1n).toString();assert.equal(await groth16.verify(vk,changed,result.proof),false);console.log('Rejected changed '+name);
+}
+const state={...config,root:path.root,used:[],balance:20000000n},claim={...result,recipient:w.recipient};
+const verify=c=>groth16.verify(vk,c.publicSignals,c.proof);
+const paid=await acceptClaim(state,claim,verify);assert.equal(paid.balance,18000000n);
+await assert.rejects(()=>acceptClaim(paid,claim,verify),/Already claimed/);
+await assert.rejects(()=>acceptClaim(state,{...claim,recipient:'999'},verify),/Recipient mismatch/);
+await assert.rejects(()=>acceptClaim(state,{...claim,publicSignals:[...result.publicSignals.slice(0,1),String(FIELD+BigInt(w.nullifier)),...result.publicSignals.slice(2)]},verify),/Non-canonical/);
+const originalError=console.error;console.error=()=>{};
+await assert.rejects(()=>wtns.calculate({...w,secret:'987654321'},'public/zk/reward.wasm',{type:'mem'}));
+await assert.rejects(()=>wtns.calculate({...w,directions:['2',...w.directions.slice(1)]},'public/zk/reward.wasm',{type:'mem'}));console.error=originalError;
+console.log('Rejected wrong secret, malformed path, duplicate, recipient mismatch and field alias.');
+const g1=a=>Buffer.from(bls.G1.ProjectivePoint.fromAffine({x:BigInt(a[0]),y:BigInt(a[1])}).toRawBytes(true)).toString('hex');
+const g2=a=>Buffer.from(bls.G2.ProjectivePoint.fromAffine({x:{c0:BigInt(a[0][0]),c1:BigInt(a[0][1])},y:{c0:BigInt(a[1][0]),c1:BigInt(a[1][1])}}).toRawBytes(true)).toString('hex');
+const key={alpha:g1(vk.vk_alpha_1),beta:g2(vk.vk_beta_2),gamma:g2(vk.vk_gamma_2),delta:g2(vk.vk_delta_2),ic:vk.IC.map(g1)};
+const proof={a:g1(result.proof.pi_a),b:g2(result.proof.pi_b),c:g1(result.proof.pi_c)};
+await mkdir('contracts/fixtures',{recursive:true});await writeFile('contracts/fixtures/claim.json',JSON.stringify({key,proof,publicSignals:result.publicSignals},null,2));
+const ak=`use careloop/proof.{Proof, VerificationKey}\nuse careloop/proof\npub fn vk() -> VerificationKey { VerificationKey { alpha:#"${key.alpha}", beta:#"${key.beta}", gamma:#"${key.gamma}", delta:#"${key.delta}", ic:[${key.ic.map(x=>'#"'+x+'"').join(',')}] } }\npub fn valid_proof() -> Proof { Proof {a:#"${proof.a}",b:#"${proof.b}",c:#"${proof.c}"} }\npub fn inputs() -> List<Int> { [${result.publicSignals.join(',')}] }\ntest accepts_real_proof() { proof.verify(vk(),valid_proof(),inputs()) }\ntest rejects_changed_recipient() { !proof.verify(vk(),valid_proof(),[${result.publicSignals.map((x,i)=>i===5?String(BigInt(x)+1n):x).join(',')}]) }\ntest rejects_noncanonical_inputs() fail {proof.verify(vk(),valid_proof(),[${result.publicSignals.map((x,i)=>i===1?String(BigInt(x)+FIELD):x).join(',')}])}\n`;
+await writeFile('contracts/lib/careloop/fixtures.ak',ak);
+console.log('Exported actual proof and VK for on-chain verifier tests.');process.exit(0);

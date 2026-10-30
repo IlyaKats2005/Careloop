@@ -1,0 +1,6 @@
+name = "careloop/rewards"
+version = "0.1.0"
+compiler = "v1.1.24"
+plutus = "v3"
+license = "GPL-3.0-or-later"
+description = "Experimental private clinic-approved reward pool; testnet only"

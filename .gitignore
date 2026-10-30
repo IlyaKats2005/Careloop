@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.local/
+.sites-runtime/
+zk/build/
+contracts/build/
+contracts/artifacts/

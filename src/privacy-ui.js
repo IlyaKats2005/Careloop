@@ -1,0 +1,25 @@
+import {commitment,leaf,tree,randomSecret,witness,config,acceptClaim} from './zk-core.js';
+let secret=null, approval=null, claim=null, ledger=null, busy=false, log=[],publicClaim=null;
+function say(message){log.push(message);window.render();}
+window.privacyPanel=()=>`<section class="card" style="margin-top:22px"><div class="eyebrow">PRIVATE REWARD · WORKING CRYPTOGRAPHY</div><h2>Prove approval. Keep the report private.</h2><p>Real Groth16 proof generated and checked on your device. Reward settlement below is a <strong>local simulation</strong>; no Cardano transaction is sent.</p><div class="steps"><div class="${secret?'on':''}">1. Enrollment</div><div class="${approval?'on':''}">2. Clinic approval</div><div class="${claim?'on':''}">3. ZK proof</div><div class="${ledger?.used.length?'on':''}">4. Claim</div></div><p>${secret?'Device secret created. It is never sent to the AI or backend.':'Create a private demo enrollment for Alex / P-024. The secret stays in memory until reload.'}</p><div class="flex" style="flex-wrap:wrap;gap:10px"><button class="btn secondary" onclick="zkEnroll()" ${secret||busy?'disabled':''}>Create enrollment</button><button class="btn" onclick="zkProve()" ${!approval||busy?'disabled':''}>${busy?'Generating proof…':'Generate ZK proof'}</button><button class="btn secondary" onclick="zkClaim()" ${!claim||busy?'disabled':''}>${ledger?.used.length?'Try duplicate claim':'Verify & simulate reward'}</button><button class="btn secondary" onclick="zkTamper()" ${!claim||busy?'disabled':''}>Test changed recipient</button></div><p class="muted">${approval?'Approved for '+approval.periodLabel+'. Eight synthetic approvals in this demo batch.':'Next: switch to Clinic, review an Alex report and approve its reward.'}</p>${claim?'<p class="info">Proof verified. No secret, questionnaire, patient ID or membership path appears in the claim.</p>':''}${publicClaim?'<details><summary>Inspect public claim</summary><pre class="proof-json">'+window.careloopEscape(JSON.stringify(publicClaim,null,2))+'</pre></details>':''}<div aria-live="polite">${log.map(s=>'<div class="audit">'+window.careloopEscape(s)+'</div>').join('')}</div><small>Development setup, fictional enrollment, no secure clinic login. Wallet and timing privacy are not implemented. Reload clears this demo.</small></section>`;
+window.zkEnroll=()=>{secret=randomSecret();window.careloopCommitment=commitment(secret);say('Enrollment created on this device.');};
+window.zkApprove=(report)=>{
+ if(!secret)throw Error('Open My rewards and create the demo enrollment first.');
+ if(approval)throw Error('This demo supports one approved report per session. Reload to start another.');
+ const period=String(Number(report.period.match(/\d+/)?.[0]||5)),c={...config,period};
+ const leaves=Array.from({length:8},()=>leaf(commitment(randomSecret()),c));const index=Number(crypto.getRandomValues(new Uint8Array(1))[0]%8);leaves[index]=leaf(window.careloopCommitment,c);
+ approval={...tree(leaves,index),c,periodLabel:report.period};ledger={...c,root:approval.root,used:[],balance:20000000n};
+ log.push('Clinic approval added to an eight-entry synthetic batch. Root is local, not yet published on-chain.');
+};
+window.zkProve=async()=>{if(!approval||busy)return;busy=true;window.render();try{
+ const recipient=BigInt('0x'+Array.from(crypto.getRandomValues(new Uint8Array(28)),x=>x.toString(16).padStart(2,'0')).join('')).toString();
+ const w=witness(secret,{root:approval.root,siblings:approval.siblings,directions:approval.directions},recipient,approval.c);
+ const result=await window.snarkjs.groth16.fullProve(w,'/zk/reward.wasm','/zk/reward.zkey',null,{}, {singleThread:true});
+ const vk=await fetch('/zk/verification_key.json').then(r=>r.json());
+ if(!await window.snarkjs.groth16.verify(vk,result.publicSignals,result.proof))throw Error('Proof verification failed');
+ claim={...result,recipient};publicClaim={...result,recipient_key_hash:BigInt(recipient).toString(16).padStart(56,'0'),network:'Cardano preprod — NOT submitted'};
+ log.push('Real Groth16 proof generated and verified locally. Recipient is a generated demo key hash, not a connected wallet.');
+ }catch(e){log.push('Proof failed: '+e.message);}finally{busy=false;window.render();}};
+async function verify(c){const vk=await fetch('/zk/verification_key.json').then(r=>r.json());return window.snarkjs.groth16.verify(vk,c.publicSignals,c.proof);}
+window.zkClaim=async()=>{if(!claim||busy)return;busy=true;try{ledger=await acceptClaim(ledger,claim,verify);log.push('Claim accepted in local ledger: 2 test ADA simulated. Nullifier recorded; no funds moved.');}catch(e){log.push('Claim rejected: '+e.message);}finally{busy=false;window.render();}};
+window.zkTamper=async()=>{if(!claim||busy)return;busy=true;try{const changed={...claim,publicSignals:[...claim.publicSignals]};changed.publicSignals[5]=(BigInt(claim.recipient)+1n).toString();const ok=await verify(changed);log.push(ok?'ERROR: altered claim accepted.':'Changed recipient rejected by the cryptographic verifier.');}catch{log.push('Changed recipient rejected.');}finally{busy=false;window.render();}};
