@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import {build} from 'esbuild';
 import {programFieldId,periodFieldId,rewardStatusForReport} from '../src/reward-status.js';
-import {FIELD,signals} from '../src/zk-core.js';
+import {FIELD,signals,commitment,leaf,tree,hash,scope} from '../src/zk-core.js';
 import {STORAGE_KEY} from '../src/network.js';
 
 function evidence(){
@@ -84,18 +84,20 @@ async function browser(saved=null){
         export const Lucid=async()=>window.fixture.lucid;
         export const assertWalletOnTargetNetwork=async()=>[];
         export const paymentKey=()=> 'a'.repeat(56);
-        export const preparePool=async()=>({dep:{network:'Preprod',address:'pool',unit:'nft'},tx:window.fixture.tx('fund')});
+        export const preparePool=async()=>({dep:window.fixture.dep,tx:window.fixture.tx('fund')});
         export const prepareClaim=async()=>window.fixture.tx('claim');
+        export const deployment=(_bp,_vk,seed,clinic)=>({...window.fixture.dep,seed,clinic});
+        export const decodeState=bytes=>window.fixture.datums[bytes];
         export const transactionSummary=tx=>({fee:0.2,hash:tx.hash});
         export const readPool=async()=>window.fixture.pool;
       `}));
     },
   }]})).outputFiles[0].text;
   const storage=new Map(saved?[[STORAGE_KEY,saved]]:[]);
-  const fixture={pool:null,status:'confirmed',tx:kind=>({hash:(kind==='fund'?'a':'b').repeat(64),sign:{withWallet:()=>({complete:async()=>({submit:async()=>(kind==='fund'?'a':'b').repeat(64)})})}})};
+  const fixture={pool:null,status:'confirmed',proofCalls:0,submissions:[],datums:{},rpcInfo:[],dep:{network:'Preprod',address:'addr_test1'+'a'.repeat(50),unit:'a'.repeat(56)+'01',clinic:'b'.repeat(56),seed:{txHash:'c'.repeat(64),outputIndex:0}},tx:kind=>({hash:(kind==='fund'?'a':'b').repeat(64),sign:{withWallet:()=>({complete:async()=>({submit:async()=>{fixture.submissions.push(kind);return (kind==='fund'?'a':'b').repeat(64);}})})}})};
   fixture.lucid={selectWallet:{fromAPI(){}},wallet:()=>({address:async()=>'recipient'}),transactionStatus:async()=>({status:fixture.status})};
-  const window={fixture,render(){},careloopEscape:String,cardano:{fixture:{name:'Fixture wallet',enable:async()=>{if(fixture.connectGate)await fixture.connectGate;return {getNetworkId:async()=>0};}}},snarkjs:{groth16:{fullProve:async w=>({publicSignals:signals(w),proof:{}}),verify:async()=>true}}};
-  const context=vm.createContext({window,sessionStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},crypto:webcrypto,TextEncoder,Uint8Array,location:{origin:'https://careloop.test'},fetch:async()=>({json:async()=>({})})});
+  const window={fixture,render(){},careloopEscape:String,cardano:{fixture:{name:'Fixture wallet',enable:async()=>{if(fixture.connectGate)await fixture.connectGate;return {getNetworkId:async()=>0};}}},snarkjs:{groth16:{fullProve:async w=>{fixture.proofCalls++;return {publicSignals:signals(w),proof:{}};},verify:async()=>true}}};
+  const context=vm.createContext({window,sessionStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{if(fixture.failArchive&&key.includes(':archive:'))throw Error('Storage full');storage.set(key,value);}},crypto:webcrypto,TextEncoder,Uint8Array,location:{origin:'https://careloop.test'},fetch:async url=>({json:async()=>String(url).endsWith('/cardano/tx_info')?fixture.rpcInfo:{}})});
   vm.runInContext(browserCode,context);
   return {window,fixture,storage,saved:(key=STORAGE_KEY)=>storage.get(key)??null,json:(key=STORAGE_KEY)=>JSON.parse(storage.get(key)??'null')};
 }
@@ -120,8 +122,52 @@ test('browser approval and signed claim retain report binding; funding never bec
   w.zkEnroll();w.zkApprove({id:'R-unique',programId:'GLP-01',period:'Week 07',periodId:'2026-W07'});
   assert.equal(w.careloopRewardStatus('R-unique').state,'approved');assert.equal(b.json(STORAGE_KEY+':account:account-a').ownerId,'account-a');
   const accountRecovery=b.saved(STORAGE_KEY+':account:account-a');w.careloopSetRewardOwner('account-b');assert.equal(w.careloopRewardStatus('R-unique'),null);assert.equal(b.saved(STORAGE_KEY+':account:account-a'),accountRecovery);
-  w.careloopSetRewardOwner(null);assert.equal(w.careloopRewardStatus('R-unique').state,'submitted');assert.equal(b.json().dep.address,'pool');
+  w.careloopSetRewardOwner(null);assert.equal(w.careloopRewardStatus('R-unique').state,'submitted');assert.equal(b.json().dep.address,b.fixture.dep.address);
   w.careloopSetRewardOwner('account-a');assert.equal(w.careloopRewardStatus('R-unique').state,'approved');assert.equal(b.json(STORAGE_KEY+':account:account-a').approval.programId,'GLP-01');
+});
+
+function cloudReport(publicCommitment,id='R-cloud',domain='98765'){
+  const c={program:programFieldId('GLP-01'),period:periodFieldId('2026-W44'),amount:'2000000',domain};
+  const leaves=Array.from({length:8},(_,i)=>leaf(commitment(String(i+20)),c));leaves[2]=leaf(publicCommitment,c);
+  return {id,programId:'GLP-01',periodId:'2026-W44',period:'Week 44 · 2026',rewardApproval:{...tree(leaves,2),c,commitment:publicCommitment,reportId:id,programId:'GLP-01',periodId:'2026-W44',periodLabel:'Week 44 · 2026'},chain:{}};
+}
+
+test('clinic loads public approval without a patient secret; failed cloud sync retains the single submitted pool',async()=>{
+  const b=await browser(),w=b.window;w.careloopSetRewardOwner('clinic-account');
+  const report=cloudReport(commitment('123456'));
+  await w.careloopUseCloudReport(report,{canFund:true});assert.equal(w.careloopChainSnapshot().enrollmentCreated,false);assert.equal(w.careloopChainSnapshot().approvalReady,true);assert.equal(w.careloopChainSnapshot().canFund,true);
+  await w.chainConnect(0);await w.zkProve();assert.equal(b.fixture.proofCalls,0);assert.equal(w.careloopChainSnapshot().proofVerified,false);
+  const writes=[];w.careloopSaveChain=async(id,value)=>{writes.push({id,value});throw Error('Server unavailable');};
+  await w.chainFund();await w.chainSign();
+  const snapshot=w.careloopChainSnapshot();assert.equal(snapshot.fund.txHash,'a'.repeat(64));assert.equal(snapshot.cloudSyncPending,true);assert.equal(snapshot.error,null);assert.deepEqual(b.fixture.submissions,['fund']);
+  assert.deepEqual(Object.keys(writes[0].value).sort(),['dep','kind','txHash']);assert.deepEqual(Object.keys(writes[0].value.dep).sort(),['address','clinic','network','seed','unit']);assert.equal(writes[0].id,report.id);assert.doesNotMatch(JSON.stringify(writes),/secret|siblings|nullifier|proof/i);
+  w.careloopSaveChain=async()=>{};await w.chainSyncCloud();assert.equal(w.careloopChainSnapshot().cloudSyncPending,false);assert.deepEqual(b.fixture.submissions,['fund']);
+  w.careloopClearCloudReport();assert.equal(w.careloopChainSnapshot().reportId,null);assert.equal(w.careloopChainSnapshot().archivedPoolCount,1);assert.equal(w.careloopChainSnapshot().walletConnected,true);
+  const key=STORAGE_KEY+':account:clinic-account';const archived=b.storage.get(b.json(key).archives[0].key);assert.equal(JSON.parse(archived).secret,null);assert.equal(JSON.parse(archived).transactions.fund.hash,'a'.repeat(64));
+  await w.careloopUseCloudReport(report,{canFund:true});assert.equal(w.careloopChainSnapshot().fund.txHash,'a'.repeat(64));assert.equal(w.careloopChainSnapshot().poolAddress,b.fixture.dep.address);
+  const restored=await browser();await restored.window.zkRestore({size:archived.length,text:async()=>archived});assert.equal(restored.window.careloopChainSnapshot().poolAddress,b.fixture.dep.address);assert.equal(restored.window.careloopCommitment,undefined);
+});
+
+test('patient must match cloud commitment, clinic mode never uses a matching or unrelated local secret',async()=>{
+  const b=await browser(),w=b.window;w.zkEnroll();const enrollment=b.json().secret;const report=cloudReport(w.careloopCommitment);
+  await w.careloopUseCloudReport(report);assert.equal(b.json().approval.nullifier,hash(enrollment,scope(report.rewardApproval.c)).toString());assert.equal(w.careloopChainSnapshot().enrollmentMatchesApproval,true);
+  await w.chainConnect(0);await w.zkProve();assert.equal(b.fixture.proofCalls,1);
+  const wrong=cloudReport(commitment('987654'),'R-another','98766');await assert.rejects(()=>w.careloopUseCloudReport(wrong),/different enrollment/);assert.equal(w.careloopChainSnapshot().reportId,report.id);
+  await w.careloopUseCloudReport(wrong,{canFund:true});assert.equal(b.json().secret,enrollment);assert.equal(b.json().approval.nullifier,null);assert.equal(w.careloopChainSnapshot().proofVerified,false);
+  await w.zkProve();assert.equal(b.fixture.proofCalls,1);
+  await w.careloopUseCloudReport(report,{canFund:true});await w.zkProve();assert.equal(b.fixture.proofCalls,1);assert.equal(b.json().approval.nullifier,null);
+  const snapshot=JSON.stringify(w.careloopChainSnapshot());assert.doesNotMatch(snapshot,/"secret"|"siblings"|"directions"|"publicSignals"|"proof"\s*:/);assert.equal(snapshot.includes(enrollment),false);
+});
+
+test('cloud report changes preserve funded state when archiving fails and ignore cloud confirmation flags',async()=>{
+  const b=await browser(),w=b.window;const report=cloudReport(commitment('123456'));
+  await w.careloopUseCloudReport(report,{canFund:true});await w.chainConnect(0);await w.chainFund();await w.chainSign();
+  b.fixture.failArchive=true;await assert.rejects(()=>w.careloopUseCloudReport(cloudReport(commitment('123457'),'R-new','98766'),{canFund:true}),/Storage full/);assert.equal(w.careloopChainSnapshot().reportId,report.id);assert.equal(w.careloopChainSnapshot().fund.txHash,'a'.repeat(64));
+  b.fixture.failArchive=false;w.careloopClearCloudReport();
+  const other=cloudReport(commitment('123458'),'R-cloud-only','98767');other.chain={fund:{txHash:'c'.repeat(64),dep:b.fixture.dep,confirmed:true,verified:true},claim:{txHash:'d'.repeat(64),confirmed:true,verified:true}};
+  await w.careloopUseCloudReport(other,{canFund:true});assert.equal(w.careloopChainSnapshot().fund.confirmed,false);assert.equal(w.careloopRewardStatus(other.id).state,'submitted');
+  b.fixture.pool={state:{...other.rewardApproval.c,root:other.rewardApproval.root,used:['123']},utxo:{assets:{lovelace:18000000n}}};
+  await w.chainRefresh();assert.equal(w.careloopChainSnapshot().claim.confirmed,false);assert.equal(w.careloopRewardStatus(other.id).state,'submitted');
 });
 
 test('reward owner cannot change while a wallet action is in progress',async()=>{

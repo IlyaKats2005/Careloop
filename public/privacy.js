@@ -119,12 +119,64 @@
     if (typeof periodId !== "string" || !/^\d{4}-(?:W\d{2}|F\d{2}|\d{2}(?:-\d{2})?)$/.test(periodId)) throw Error("A valid reporting period ID is required for reward approval.");
     return asciiFieldId(periodId);
   }
+  function cloudRewardApproval(report) {
+    const source = report?.rewardApproval;
+    if (!source) return null;
+    if (!identifier(report.id) || source.reportId !== report.id || source.programId !== report.programId || source.periodId !== report.periodId) throw Error("Cloud approval does not match this report.");
+    const c = Object.fromEntries(["program", "period", "amount", "domain"].map((key) => [key, source.c?.[key]]));
+    if (Object.values(c).some((value) => !canonical(value)) || c.program !== programFieldId(report.programId) || c.period !== periodFieldId(report.periodId) || c.amount !== "2000000" || !canonical(source.root) || !canonical(source.commitment)) throw Error("Cloud approval has invalid program or reward terms.");
+    if (!Array.isArray(source.siblings) || source.siblings.length !== 3 || source.siblings.some((value) => !canonical(value)) || !Array.isArray(source.directions) || source.directions.length !== 3 || source.directions.some((value) => value !== "0" && value !== "1")) throw Error("Invalid cloud approval path.");
+    let node = BigInt(leaf(source.commitment, c));
+    for (let i = 0; i < 3; i++) node = source.directions[i] === "0" ? hash(node, source.siblings[i]) : hash(source.siblings[i], node);
+    if (node.toString() !== source.root) throw Error("Cloud approval path does not match its commitment and root.");
+    return { reportId: report.id, programId: report.programId, periodId: report.periodId, periodLabel: String(source.periodLabel || report.period || report.periodId).slice(0, 160), root: source.root, siblings: [...source.siblings], directions: [...source.directions], commitment: source.commitment, c };
+  }
+  function publicRewardDeployment(dep2) {
+    if (!dep2 || dep2.network !== "Preprod" || !/^addr_test1[0-9a-z]{40,180}$/.test(dep2.address || "") || !/^[0-9a-f]{56,120}$/i.test(dep2.unit || "") || !/^[0-9a-f]{56}$/i.test(dep2.clinic || "") || !/^[0-9a-f]{64}$/i.test(dep2.seed?.txHash || "") || !Number.isSafeInteger(dep2.seed?.outputIndex) || dep2.seed.outputIndex < 0) throw Error("Invalid public Preprod pool configuration.");
+    return { network: "Preprod", seed: { txHash: dep2.seed.txHash, outputIndex: dep2.seed.outputIndex }, clinic: dep2.clinic, address: dep2.address, unit: dep2.unit };
+  }
+  function poolMatchesApproval(state, approval2) {
+    return !!approval2 && ["root", "program", "period", "amount", "domain"].every((key) => state?.[key] === (key === "root" ? approval2.root : approval2.c?.[key]));
+  }
+  function verifyRewardTransaction(kind, txHash, info, dep2, approval2, decodeState) {
+    try {
+      if (info?.tx_hash !== txHash || !Number.isInteger(info.block_height) || info.block_height <= 0 || !Array.isArray(info.inputs) || !Array.isArray(info.outputs)) return null;
+      const quantity = (entry) => (entry.asset_list || []).filter((a) => a.policy_id + (a.asset_name || "") === dep2.unit).reduce((n, a) => n + BigInt(a.quantity), 0n);
+      const poolOutputs = info.outputs.filter((o) => o.payment_addr?.bech32 === dep2.address && quantity(o) === 1n);
+      if (poolOutputs.length !== 1) return null;
+      const after = decodeState(poolOutputs[0].inline_datum?.bytes);
+      if (!poolMatchesApproval(after, approval2) || !Array.isArray(after.used)) return null;
+      if (kind === "fund") {
+        if (BigInt(poolOutputs[0].value) !== 20000000n || after.used.length !== 0 || !info.inputs.some((i) => i.tx_hash === dep2.seed.txHash && i.tx_index === dep2.seed.outputIndex)) return null;
+        if (!info.plutus_contracts?.some((c) => c.valid_contract === true && c.script_hash === dep2.unit.slice(0, 56))) return null;
+        return { verified: true };
+      }
+      if (kind !== "claim") return null;
+      const poolInputs = info.inputs.filter((i) => i.payment_addr?.bech32 === dep2.address && quantity(i) === 1n);
+      if (poolInputs.length !== 1) return null;
+      const before = decodeState(poolInputs[0].inline_datum?.bytes);
+      if (!poolMatchesApproval(before, approval2) || !Array.isArray(before.used) || BigInt(poolInputs[0].value) - BigInt(poolOutputs[0].value) !== 2000000n) return null;
+      const nullifier = after.used[0];
+      if (!canonical(nullifier) || before.used.includes(nullifier) || after.used.length !== before.used.length + 1 || before.used.some((n, i) => after.used[i + 1] !== n) || approval2.nullifier && approval2.nullifier !== nullifier) return null;
+      const contract = info.plutus_contracts?.find((c) => c.address === dep2.address && c.valid_contract === true && c.spends_input?.tx_hash === poolInputs[0].tx_hash && c.spends_input?.tx_index === poolInputs[0].tx_index && c.input?.redeemer?.purpose === "spend" && c.input.redeemer.datum?.value?.constructor === 1);
+      const recipient = contract?.input.redeemer.datum.value.fields?.[2]?.bytes;
+      if (!/^[0-9a-f]{56}$/i.test(recipient || "")) return null;
+      const payment = info.outputs.find((o) => o.payment_addr?.cred === recipient && BigInt(o.value) === 2000000n);
+      if (!payment) return null;
+      return { verified: true, nullifier, recipientAddress: payment.payment_addr.bech32 };
+    } catch {
+      return null;
+    }
+  }
   function rewardStatusForReport(reportId, { approval: approval2, submitted: submitted2, chainState: chainState2 } = {}) {
     if (!identifier(reportId) || !approval2 || approval2.reportId !== reportId || !programIdentifier(approval2.programId)) return null;
     const approved = { state: "approved", label: "Approved \xB7 not paid" };
-    const matchingClaim = submitted2?.kind === "claim" && submitted2.reportId === reportId && submitted2.programId === approval2.programId && canonical(approval2.nullifier) && submitted2.nullifier === approval2.nullifier && typeof submitted2.hash === "string" && /^[0-9a-f]{64}$/i.test(submitted2.hash);
+    const expectedNullifier = canonical(approval2.nullifier) ? approval2.nullifier : submitted2?.chainVerified === true && submitted2.source === "cloud" ? submitted2.nullifier : null;
+    const matchingClaim = submitted2?.kind === "claim" && submitted2.reportId === reportId && submitted2.programId === approval2.programId && canonical(expectedNullifier) && submitted2.nullifier === expectedNullifier && typeof submitted2.hash === "string" && /^[0-9a-f]{64}$/i.test(submitted2.hash);
+    if (!matchingClaim && submitted2?.source === "cloud" && submitted2.kind === "claim" && submitted2.reportId === reportId && submitted2.programId === approval2.programId && /^[0-9a-f]{64}$/i.test(submitted2.hash || "")) return { state: "submitted", label: "Claim reported \xB7 awaiting Preprod verification", txHash: submitted2.hash };
     if (!matchingClaim) return approved;
     const pending2 = { state: "submitted", label: "Claim submitted \xB7 confirmation pending", txHash: submitted2.hash };
+    if (submitted2.source === "cloud" && submitted2.chainVerified !== true) return pending2;
     if (submitted2.confirmed !== true || !Array.isArray(chainState2?.used) || !chainState2.used.includes(submitted2.nullifier)) return pending2;
     const expected = { root: approval2.root, program: approval2.c?.program, period: approval2.c?.period, amount: approval2.c?.amount, domain: approval2.c?.domain };
     if (approval2.periodId != null) {
@@ -153,25 +205,49 @@
   var pending = null;
   var submitted = null;
   var chainState = null;
+  var cloudContext = null;
+  var transactions = { fund: null, claim: null };
+  var poolBalance = null;
+  var archives = [];
+  var lastError = false;
   var savedKey = STORAGE_KEY;
   var rewardOwnerId = null;
   var rewardStorageValid = true;
-  function resetRewardState() {
-    secret = null;
+  function clearReportState() {
     approval = null;
     claim = null;
-    log = [];
     publicClaim = null;
-    sdk = null;
-    lucid = null;
-    wallet = null;
-    walletAddress = null;
     dep = null;
     pending = null;
     submitted = null;
     chainState = null;
+    cloudContext = null;
+    transactions = { fund: null, claim: null };
+    poolBalance = null;
+    lastError = false;
+  }
+  function resetRewardState() {
+    clearReportState();
+    secret = null;
+    log = [];
+    sdk = null;
+    lucid = null;
+    wallet = null;
+    walletAddress = null;
+    archives = [];
     rewardStorageValid = true;
     delete window.careloopCommitment;
+  }
+  function restoredTransactions(saved) {
+    const records = { fund: null, claim: null };
+    for (const kind of ["fund", "claim"]) {
+      const r = saved.transactions?.[kind] || (saved.submitted?.kind === kind ? saved.submitted : null);
+      if (r && /^[0-9a-f]{64}$/i.test(r.hash || "")) records[kind] = { ...r, kind, confirmed: false, chainVerified: false };
+    }
+    return records;
+  }
+  function selectSubmitted() {
+    submitted = transactions.claim || transactions.fund;
   }
   function restoreSavedReward() {
     try {
@@ -180,8 +256,11 @@
       assertRecoveryNetwork(saved);
       if ((saved.ownerId ?? null) !== rewardOwnerId) throw Error("Reward owner mismatch");
       const restoredCommitment = saved.secret ? commitment(saved.secret) : null;
-      ({ secret, approval, dep, submitted } = saved);
-      if (submitted) submitted = { ...submitted, confirmed: false };
+      ({ secret, approval, dep } = saved);
+      transactions = restoredTransactions(saved);
+      selectSubmitted();
+      cloudContext = saved.cloudContext ? { reportId: saved.cloudContext.reportId, programId: saved.cloudContext.programId, canFund: false } : null;
+      archives = Array.isArray(saved.archives) ? saved.archives.filter((a) => typeof a.key === "string" && a.key.startsWith(savedKey + ":archive:")) : [];
       if (restoredCommitment) window.careloopCommitment = restoredCommitment;
     } catch {
       resetRewardState();
@@ -191,8 +270,9 @@
   }
   restoreSavedReward();
   var esc = (s) => window.careloopEscape(String(s));
+  var recovery = () => ({ network: NETWORK, networkMagic: NETWORK_MAGIC, ownerId: rewardOwnerId, secret, approval, dep, submitted, transactions, cloudContext, archives });
   var persist = () => {
-    if (rewardStorageValid) sessionStorage.setItem(savedKey, JSON.stringify({ network: NETWORK, networkMagic: NETWORK_MAGIC, ownerId: rewardOwnerId, secret, approval, dep, submitted }));
+    if (rewardStorageValid) sessionStorage.setItem(savedKey, JSON.stringify(recovery()));
   };
   window.careloopRewardBusy = () => busy;
   window.careloopSetRewardOwner = (ownerId = null) => {
@@ -213,10 +293,12 @@
   async function run(fn) {
     if (busy) return;
     busy = true;
+    lastError = false;
     window.render();
     try {
       await fn();
     } catch (e) {
+      lastError = true;
       log.push("Action stopped: " + (e?.message || e?.info || String(e)));
     } finally {
       busy = false;
@@ -230,21 +312,134 @@
   function button(label, fn, disabled = false) {
     return `<button class="btn secondary" onclick="${fn}" ${disabled || busy ? "disabled" : ""}>${label}</button>`;
   }
-  window.careloopRewardStatus = (reportId) => rewardStatusForReport(reportId, { approval, submitted, chainState });
+  var canProve = () => !!secret && !!approval && !cloudContext?.canFund && (!approval.commitment || commitment(secret) === approval.commitment);
+  var canFund = () => !!approval && (!cloudContext || cloudContext.canFund === true);
+  var signature = (a, c) => JSON.stringify([a?.reportId ?? c?.reportId, a?.programId ?? c?.programId, a?.root, a?.c?.program, a?.c?.period, a?.c?.amount, a?.c?.domain]);
+  function archiveCurrent() {
+    if (!dep && !submitted) return;
+    const key = savedKey + ":archive:" + Date.now() + ":" + crypto.randomUUID();
+    sessionStorage.setItem(key, JSON.stringify(recovery()));
+    archives = [...archives, { key, reportId: approval?.reportId ?? cloudContext?.reportId ?? null, programId: approval?.programId ?? cloudContext?.programId ?? null, poolAddress: dep?.address ?? null, signature: signature(approval, cloudContext), createdAt: (/* @__PURE__ */ new Date()).toISOString() }];
+    persist();
+    log.push("Previous pool recovery archived in this tab. Its download remains available below.");
+  }
+  async function loadDeployment(value) {
+    if (!value) return null;
+    const publicDep = publicRewardDeployment(value);
+    sdk ??= await import("/chain/wallet.js");
+    const [bp, vk] = await Promise.all(["/zk/plutus.json", "/zk/verification_key.json"].map(async (url) => {
+      const r = await fetch(url);
+      if (r.ok === false) throw Error("Unable to load trusted contract files.");
+      return r.json();
+    }));
+    const rebuilt = sdk.deployment(bp, vk, publicDep.seed, publicDep.clinic);
+    if (rebuilt.network !== NETWORK || rebuilt.address !== publicDep.address || rebuilt.unit !== publicDep.unit) throw Error("Cloud pool does not match the trusted Preprod contract.");
+    return rebuilt;
+  }
+  function cloudRecord(kind, value, a) {
+    if (!value) return null;
+    if (!/^[0-9a-f]{64}$/i.test(value.txHash || "")) throw Error("Invalid cloud transaction ID.");
+    return { kind, hash: value.txHash, reportId: a.reportId, programId: a.programId, source: "cloud", confirmed: false, chainVerified: false, ...kind === "claim" && a.nullifier ? { nullifier: a.nullifier } : {} };
+  }
+  window.careloopClearCloudReport = () => {
+    if (busy) throw Error("Wait for the current reward action before changing reports.");
+    archiveCurrent();
+    clearReportState();
+    persist();
+    window.render?.();
+  };
+  window.careloopUseCloudReport = async (report, { canFund: funding = false } = {}) => {
+    if (busy) throw Error("Wait for the current reward action before changing reports.");
+    if (!rewardStorageValid) throw Error("Preserved reward recovery data needs inspection first.");
+    if (typeof report?.id !== "string" || !report.id.trim()) throw Error("A saved cloud report is required.");
+    programFieldId(report.programId);
+    busy = true;
+    window.render?.();
+    try {
+      const next = cloudRewardApproval(report), context = { reportId: report.id, programId: report.programId, canFund: funding === true };
+      if (next && !context.canFund && secret && commitment(secret) !== next.commitment) throw Error("This report uses a different enrollment. Restore its private recovery file to claim.");
+      if (next) next.nullifier = !context.canFund && secret ? hash(secret, scope(next.c)).toString() : null;
+      const same = signature(approval, cloudContext) === signature(next, context);
+      let previous = null;
+      if (!same) {
+        const old = [...archives].reverse().find((a) => a.signature === signature(next, context));
+        if (old) {
+          previous = assertRecoveryNetwork(JSON.parse(sessionStorage.getItem(old.key) || "null"));
+          if ((previous.ownerId ?? null) !== rewardOwnerId) throw Error("Archived pool owner mismatch");
+        }
+      }
+      const base = same ? transactions : previous ? restoredTransactions(previous) : { fund: null, claim: null };
+      const cloudDep = report.chain?.fund?.dep ?? report.chain?.claim?.dep;
+      if (!next && cloudDep) throw Error("A funded cloud report must include its public approval.");
+      let nextDep = cloudDep ? await loadDeployment(cloudDep) : same ? dep : previous?.dep ? await loadDeployment(previous.dep) : null;
+      if (report.chain?.fund?.dep && report.chain?.claim?.dep && JSON.stringify(publicRewardDeployment(report.chain.fund.dep)) !== JSON.stringify(publicRewardDeployment(report.chain.claim.dep))) throw Error("Cloud funding and claim refer to different pools.");
+      const heldDep = same ? dep : previous?.dep;
+      if (heldDep && nextDep && (heldDep.address !== nextDep.address || heldDep.unit !== nextDep.unit)) throw Error("Cloud pool differs from the preserved local pool. Keep its recovery file.");
+      const nextRecords = { fund: null, claim: null };
+      for (const kind of ["fund", "claim"]) {
+        const incoming = next ? cloudRecord(kind, report.chain?.[kind], next) : null;
+        nextRecords[kind] = base[kind]?.source === "local" || base[kind] && base[kind].hash === incoming?.hash ? base[kind] : incoming || base[kind];
+      }
+      if (!same) archiveCurrent();
+      if (!same || cloudContext?.canFund !== context.canFund) {
+        claim = null;
+        publicClaim = null;
+        pending = null;
+        chainState = null;
+        poolBalance = null;
+      }
+      approval = next;
+      cloudContext = context;
+      dep = nextDep;
+      transactions = nextRecords;
+      selectSubmitted();
+      lastError = false;
+      persist();
+      log.push(context.canFund ? "Cloud approval loaded for clinic funding. The patient enrollment secret is not needed." : "Cloud report loaded. Claiming requires its matching private enrollment.");
+      return window.careloopChainSnapshot();
+    } finally {
+      busy = false;
+      window.render?.();
+    }
+  };
+  window.careloopRewardStatus = (reportId) => rewardStatusForReport(reportId, { approval, submitted: transactions.claim || submitted, chainState });
+  window.careloopChainSnapshot = () => {
+    const safe = (r) => r ? { txHash: r.hash, confirmed: r.confirmed === true, source: r.source || "local" } : null;
+    return { network: NETWORK, networkMagic: NETWORK_MAGIC, busy, walletConnected: !!walletAddress, walletAddress: walletAddress || null, enrollmentCreated: !!secret, enrollmentMatchesApproval: canProve(), approvalReady: !!approval, proofVerified: !!claim, canFund: canFund(), poolConfirmed: !!chainState, poolAddress: dep?.address || null, stateNft: dep?.unit || null, poolBalanceLovelace: poolBalance?.toString() ?? null, poolBalance: poolBalance == null ? null : Number(poolBalance) / 1e6, usedNullifiers: chainState ? [...chainState.used] : [], reportId: approval?.reportId ?? cloudContext?.reportId ?? null, programId: approval?.programId ?? cloudContext?.programId ?? null, approvalPeriodLabel: approval?.periodLabel ?? null, fund: safe(transactions.fund), claim: safe(transactions.claim), submitted: submitted ? { kind: submitted.kind, ...safe(submitted) } : null, rewardStatus: window.careloopRewardStatus(approval?.reportId), cloudSyncPending: Object.values(transactions).some((r) => r?.syncPending), error: lastError ? "The last reward action did not complete. See My rewards for details." : null, archivedPoolCount: archives.length };
+  };
+  async function saveCloudRecord(record) {
+    if (!cloudContext) return;
+    record.syncPending = true;
+    persist();
+    try {
+      if (typeof window.careloopSaveChain !== "function") throw Error("Cloud save is unavailable");
+      await window.careloopSaveChain(record.reportId, { kind: record.kind, txHash: record.hash, dep: publicRewardDeployment(dep) });
+      record.syncPending = false;
+      persist();
+      log.push("Transaction reference saved to the shared report.");
+    } catch {
+      log.push("The transaction is retained locally. Its cloud record could not be saved; retry cloud sync without submitting another transaction.");
+    }
+  }
+  window.chainSyncCloud = () => run(async () => {
+    for (const record of Object.values(transactions)) if (record?.syncPending) await saveCloudRecord(record);
+  });
   window.privacyPanel = () => `<section class="card" style="margin-top:22px"><div class="eyebrow">CARDANO PREPROD \xB7 ON-CHAIN REWARDS</div><h2>Prove approval. Claim test ADA.</h2><p>Real Cardano transactions on <strong>Preprod testnet</strong>. Your wallet signs; this app never receives its seed phrase. Gemini reviews fictional reports; the clinic approves eligibility.</p><div class="steps"><div class="${secret ? "on" : ""}">1. Enrollment</div><div class="${approval ? "on" : ""}">2. Approval & funding</div><div class="${claim ? "on" : ""}">3. ZK proof</div><div class="${window.careloopRewardStatus(approval?.reportId)?.state === "confirmed" ? "on" : ""}">4. On-chain claim</div></div>
 <h3>Wallet</h3>${walletAddress ? `<p class="proof-json">Connected: ${esc(walletAddress)}</p>` : `<p>Use a Cardano wallet extension in your browser, switched to Preprod. The ChatGPT browser may not have an extension.</p>`}
 <div class="flex" style="flex-wrap:wrap;gap:10px">${wallets().map((w, i) => button("Connect " + esc(w.name), `chainConnect(${i})`)).join("") || '<span class="muted">No wallet extension detected. Open this site in the browser where your Cardano wallet is installed.</span>'}${button("Refresh wallets", "window.render()")}${button("Check Preprod network", "chainCheckNetwork()")}</div>
 <p><a href="https://docs.cardano.org/cardano-testnets/tools/faucet/" target="_blank" rel="noopener noreferrer">Get free Preprod test ADA \u2197</a> \xB7 Funding needs a pure-ADA UTxO \u226525 test ADA and separate collateral. Claims need test ADA for fees/collateral. Network reads and submitted transactions go to Koios.</p>
-<h3>Enrollment & approval</h3><p>${secret ? "Enrollment saved in this browser tab. The secret is not sent to Gemini, Koios or the blockchain." : "Create a fictional enrollment for Alex / P-024, then switch to Clinic and approve a report."}</p>
-<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Create enrollment", "zkEnroll()", !!secret || !rewardStorageValid)}${button("Download recovery file", "zkBackup()", !secret && rewardStorageValid)}<label class="btn secondary">Restore recovery file<input type="file" accept="application/json" onchange="zkRestore(this.files[0])" style="max-width:200px" ${busy ? "disabled" : ""}></label></div>
+<h3>Enrollment & approval</h3><p>${cloudContext?.canFund ? "Clinic funding uses the patient\u2019s public approval. The patient keeps their own enrollment secret." : secret ? "Enrollment saved in this browser tab. The secret is not sent to Gemini, Koios or the blockchain." : "Create an enrollment before submitting a fictional report, or restore its private recovery file."}</p>
+<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Create enrollment", "zkEnroll()", !!secret || !rewardStorageValid || cloudContext?.canFund)}${button("Download recovery file", "zkBackup()", !secret && !dep && !approval && rewardStorageValid)}<label class="btn secondary">Restore recovery file<input type="file" accept="application/json" onchange="zkRestore(this.files[0])" style="max-width:200px" ${busy ? "disabled" : ""}></label></div>
+${archives.length ? `<details><summary>Preserved pool recovery files (${archives.length})</summary>${archives.map((a, i) => button("Download " + esc(a.reportId || "previous pool"), `zkBackupArchive(${i})`)).join("")}</details>` : ""}
 <p>${approval ? "Approved for " + esc(approval.periodLabel) + (approval.reportId ? " \xB7 Report " + esc(approval.reportId) + " \xB7 Program " + esc(approval.programId) : " \xB7 Legacy approval, not linked to a report") + ". Eight synthetic approvals in this batch. Fixed demo reward: 2 test ADA for this reporting period." : "Awaiting clinic approval."}</p><p class="muted">The connected funding wallet acts as the clinic for this fictional demo. Selecting the Clinic role does not verify clinic membership.</p>
 <h3>Reward pool</h3><p>Fund <strong>20 test ADA</strong>: up to eight rewards of 2 test ADA, plus 4 test ADA retained in the contract. This experimental pool has no refund function. Only use disposable test ADA.</p>
-<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Prepare 20 ADA pool", "chainFund()", !approval || !lucid || !!dep)}${button("Refresh on-chain state", "chainRefresh()", !dep || !lucid)}${dep && !submitted && !chainState ? button("Discard unsubmitted pool", "chainDiscard()") : ""}</div>
+<div class="flex" style="flex-wrap:wrap;gap:10px">${button("Prepare 20 ADA pool", "chainFund()", !canFund() || !lucid || !!dep || !!transactions.fund)}${button("Refresh on-chain state", "chainRefresh()", !dep)}${dep && !submitted && !chainState ? button("Discard unsubmitted pool", "chainDiscard()") : ""}</div>
 ${dep ? `<p class="proof-json">Pool address: ${esc(dep.address)}<br>State NFT: ${esc(dep.unit)}</p><p>${chainState ? "Confirmed pool \xB7 " + chainState.used.length + " claims recorded." : "Pool configuration saved; refresh to check confirmation."}</p>` : ""}
-<h3>Private claim</h3><div class="flex" style="flex-wrap:wrap;gap:10px">${button("Generate ZK proof", "zkProve()", !approval || !walletAddress)}${button("Prepare 2 ADA claim", "chainClaim()", !claim || !dep || !lucid)}${button("Test changed recipient", "zkTamper()", !claim)}</div><p>Proofs bind the reward to your connected wallet\u2019s payment key. No questionnaire, patient ID, secret or Merkle path is included on-chain. Wallets, fees, timing and amounts remain public.</p>
+<h3>Private claim</h3><div class="flex" style="flex-wrap:wrap;gap:10px">${button("Generate ZK proof", "zkProve()", !canProve() || !walletAddress)}${button("Prepare 2 ADA claim", "chainClaim()", !canProve() || !claim || !dep || !lucid || !!transactions.claim)}${button("Test changed recipient", "zkTamper()", !claim)}</div><p>Proofs bind the reward to your connected wallet\u2019s payment key. No questionnaire, patient ID, secret or Merkle path is included on-chain. Wallets, fees, timing and amounts remain public.</p>
 ${publicClaim ? `<details><summary>Inspect public claim</summary><pre class="proof-json">${esc(JSON.stringify(publicClaim, null, 2))}</pre></details>` : ""}
 ${pending ? `<div class="info"><h3>Review transaction before signing</h3><p>${esc(pending.kind === "fund" ? "Lock 20 test ADA at the pool above; mint one state NFT." : "Pay 2 test ADA from the pool to your connected wallet; record the nullifier.")} Your wallet pays a network fee of approximately ${pending.summary.fee.toFixed(6)} test ADA.</p><p class="proof-json">Transaction ID: ${pending.summary.hash}</p><p>Check the outputs in your wallet. Signing submits this transaction to Preprod.</p>${button("Sign & submit in wallet", "chainSign()")}${button("Cancel prepared transaction", "chainCancel()")}</div>` : ""}
 ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}/transaction/${esc(submitted.hash)}">View ${esc(submitted.kind)} transaction \u2197</a> \xB7 ${submitted.confirmed ? "Confirmed on Preprod" : "Submitted; confirmation pending"}</p>` : ""}
+${Object.values(transactions).some((r) => r?.syncPending) ? button("Retry cloud record", "chainSyncCloud()") : ""}
 <div aria-live="polite">${busy ? '<p class="info">Working\u2026 keep this tab open.</p>' : ""}${log.map((s) => '<div class="audit">' + esc(s) + "</div>").join("")}</div><small>Experimental development proving setup. Use fictional data only. Enrollment recovery files contain your private enrollment secret. Keep them private. Closing this tab can clear its local session.</small></section>`;
   window.zkEnroll = () => {
     if (!rewardStorageValid) throw Error("Existing reward recovery data needs inspection. Download it before restoring a valid Preprod recovery file.");
@@ -263,7 +458,7 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     const leaves = Array.from({ length: 8 }, () => leaf(commitment(randomSecret()), c));
     const index = crypto.getRandomValues(new Uint8Array(1))[0] % 8;
     leaves[index] = leaf(window.careloopCommitment, c);
-    approval = { ...tree(leaves, index), c, reportId: report.id, programId, periodId: report.periodId ?? null, nullifier: hash(secret, scope(c)).toString(), periodLabel: report.period };
+    approval = { ...tree(leaves, index), c, commitment: window.careloopCommitment, reportId: report.id, programId, periodId: report.periodId ?? null, nullifier: hash(secret, scope(c)).toString(), periodLabel: report.period };
     persist();
     log.push("Fictional clinic approval created for report " + report.id + ". Funding transaction will commit this root on-chain.");
   };
@@ -290,15 +485,19 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     log.push("Preprod wallet connected; wallet outputs verified on the target network.");
   });
   window.chainFund = () => run(async () => {
-    if (!approval || !lucid || dep) throw Error("Create an approval, connect wallet and use a fresh pool.");
+    if (!canFund() || !lucid || dep || transactions.fund) throw Error("Load a clinic approval, connect its funding wallet and use a fresh pool.");
     const [blueprint, vk] = await Promise.all(["/zk/plutus.json", "/zk/verification_key.json"].map((u) => fetch(u).then((r) => r.json())));
     const prepared = await sdk.preparePool(lucid, blueprint, vk, { ...approval.c, root: approval.root });
     dep = prepared.dep;
-    pending = { tx: prepared.tx, kind: "fund", summary: sdk.transactionSummary(prepared.tx), address: walletAddress };
+    pending = { tx: prepared.tx, kind: "fund", summary: sdk.transactionSummary(prepared.tx), address: walletAddress, reportId: approval.reportId, programId: approval.programId };
     log.push("Funding transaction prepared, not signed or submitted.");
   });
   window.chainDiscard = () => {
     if (busy) return;
+    if (submitted || chainState) {
+      say("A submitted pool cannot be discarded. Download its recovery file.");
+      return;
+    }
     dep = null;
     pending = null;
     persist();
@@ -319,24 +518,54 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     if (now !== pending.address) throw Error("Wallet account changed. Reconnect and prepare again.");
     const p = pending;
     const signed = await p.tx.sign.withWallet().complete();
-    const hash2 = await signed.submit();
-    submitted = { hash: hash2, kind: p.kind, confirmed: false, ...p.kind === "claim" ? { reportId: p.reportId, programId: p.programId, nullifier: p.nullifier } : {} };
+    const record = { hash: p.summary.hash, kind: p.kind, reportId: p.reportId, programId: p.programId, confirmed: false, source: "local", submissionStatus: "pending", ...p.kind === "claim" ? { nullifier: p.nullifier } : {} };
+    transactions[p.kind] = record;
+    selectSubmitted();
     pending = null;
     persist();
+    const txHash = await signed.submit();
+    if (txHash !== record.hash) throw Error("Unexpected transaction ID. Saved state retained; inspect before retry.");
+    record.submissionStatus = "submitted";
+    persist();
     log.push("Submitted to Preprod. No confirmation claimed yet; use Refresh on-chain state.");
+    await saveCloudRecord(record);
   });
   window.chainRefresh = () => run(async () => {
-    if (!lucid || !dep) throw Error("Connect wallet and prepare a pool first.");
-    const pool = await sdk.readPool(lucid, dep);
-    chainState = pool.state;
-    if (submitted) {
-      const state = await lucid.transactionStatus(submitted.hash);
-      submitted.confirmed = state.status === "confirmed";
+    if (!dep) throw Error("Load a funded report or prepare a pool first.");
+    sdk ??= await import("/chain/wallet.js");
+    const reader = lucid ?? await sdk.Lucid(new sdk.Koios(location.origin + "/cardano"), NETWORK);
+    chainState = null;
+    poolBalance = null;
+    for (const r of Object.values(transactions)) if (r) {
+      r.confirmed = false;
+      r.chainVerified = false;
     }
-    log.push("Read pool from Preprod: " + pool.utxo.assets.lovelace / 1000000n + " test ADA, " + chainState.used.length + " claims.");
+    const pool = await sdk.readPool(reader, dep);
+    if (!poolMatchesApproval(pool.state, approval)) throw Error("The Preprod pool does not match this report approval.");
+    chainState = pool.state;
+    poolBalance = pool.utxo.assets.lovelace;
+    for (const record of Object.values(transactions)) if (record) {
+      const status = await reader.transactionStatus(record.hash);
+      if (status.status !== "confirmed") continue;
+      if (record.source === "cloud") {
+        const r = await fetch(location.origin + "/cardano/tx_info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ _tx_hashes: [record.hash], _inputs: true, _assets: true, _scripts: true, _bytecode: true }) });
+        if (r.ok === false) throw Error("Unable to verify the cloud transaction on Preprod.");
+        const rows = await r.json();
+        const evidence = verifyRewardTransaction(record.kind, record.hash, Array.isArray(rows) ? rows.find((t) => t.tx_hash === record.hash) : null, dep, approval, sdk.decodeState);
+        if (!evidence) {
+          log.push("Cloud " + record.kind + " reference is not verified as this pool transaction.");
+          continue;
+        }
+        record.chainVerified = true;
+        if (evidence.nullifier) record.nullifier = evidence.nullifier;
+      }
+      record.confirmed = true;
+    }
+    selectSubmitted();
+    log.push("Read pool from Preprod: " + poolBalance / 1000000n + " test ADA, " + chainState.used.length + " claims.");
   });
   window.zkProve = () => run(async () => {
-    if (!approval || !walletAddress) throw Error("Approve a report and connect the recipient wallet first.");
+    if (!canProve() || !walletAddress) throw Error("The matching patient enrollment and recipient wallet are required. Clinic funding cannot use a clinic enrollment secret.");
     const recipient = BigInt("0x" + sdk.paymentKey(walletAddress)).toString();
     const w = witness(secret, { root: approval.root, siblings: approval.siblings, directions: approval.directions }, recipient, approval.c);
     const result = await window.snarkjs.groth16.fullProve(w, "/zk/reward.wasm", "/zk/reward.zkey", null, {}, { singleThread: true });
@@ -348,7 +577,7 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     log.push("Real proof generated and verified; bound to connected wallet.");
   });
   window.chainClaim = () => run(async () => {
-    if (!claim || !dep || !lucid) throw Error("Connect wallet, fund pool and generate proof first.");
+    if (!canProve() || !claim || !dep || !lucid || transactions.claim) throw Error("Use the matching patient proof and funded pool. Refresh any already recorded claim before continuing.");
     const tx = await sdk.prepareClaim(lucid, dep, claim, walletAddress);
     pending = { tx, kind: "claim", summary: sdk.transactionSummary(tx), address: walletAddress, reportId: approval?.reportId ?? null, programId: approval?.programId ?? null, nullifier: claim.publicSignals[1] };
     log.push("Claim passed script evaluation. Review and sign to submit it.");
@@ -361,36 +590,43 @@ ${submitted ? `<p><a target="_blank" rel="noopener noreferrer" href="${EXPLORER}
     const ok = await window.snarkjs.groth16.verify(vk, changed, claim.proof);
     log.push(ok ? "ERROR: altered proof accepted." : "Changed recipient rejected by cryptographic verifier.");
   });
-  window.zkBackup = () => {
-    persist();
-    const u = URL.createObjectURL(new Blob([sessionStorage.getItem(savedKey)], { type: "application/json" }));
+  function downloadRecovery(contents, name) {
+    if (!contents) throw Error("Recovery file is unavailable.");
+    const u = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
     const a = document.createElement("a");
     a.href = u;
-    a.download = "careloop-preprod-private-recovery.json";
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(u), 1e3);
+  }
+  window.zkBackup = () => {
+    persist();
+    downloadRecovery(sessionStorage.getItem(savedKey), "careloop-preprod-private-recovery.json");
+  };
+  window.zkBackupArchive = (index) => {
+    const entry = archives[index];
+    if (!entry || !entry.key.startsWith(savedKey + ":archive:")) throw Error("Recovery archive is unavailable for this account.");
+    downloadRecovery(sessionStorage.getItem(entry.key), "careloop-preprod-archived-pool-recovery.json");
   };
   window.zkRestore = (file) => run(async () => {
     if (!file) return;
     if (secret || dep) throw Error("Restore into a fresh browser tab before creating an enrollment.");
     if (file.size > 1e5) throw Error("Recovery file too large.");
     const s = assertRecoveryNetwork(JSON.parse(await file.text()));
-    const restoredCommitment = commitment(s.secret);
+    const restoredCommitment = s.secret ? commitment(s.secret) : null;
     if (s.approval) {
       if (s.approval.siblings?.length !== 3 || s.approval.directions?.length !== 3) throw Error("Invalid recovery path");
     }
-    let restoredDep = null;
-    if (s.dep) {
-      sdk ??= await import("/chain/wallet.js");
-      const [bp, vk] = await Promise.all(["/zk/plutus.json", "/zk/verification_key.json"].map((u) => fetch(u).then((r) => r.json())));
-      restoredDep = sdk.deployment(bp, vk, s.dep.seed, s.dep.clinic);
-    }
-    secret = s.secret;
-    approval = s.approval;
-    submitted = s.submitted ? { ...s.submitted, confirmed: false } : null;
+    const restoredDep = s.dep ? await loadDeployment(s.dep) : null;
+    secret = s.secret || null;
+    approval = s.approval || null;
+    transactions = restoredTransactions(s);
+    selectSubmitted();
+    cloudContext = s.cloudContext ? { reportId: s.cloudContext.reportId, programId: s.cloudContext.programId, canFund: false } : null;
     dep = restoredDep;
-    window.careloopCommitment = restoredCommitment;
+    if (restoredCommitment) window.careloopCommitment = restoredCommitment;
+    else delete window.careloopCommitment;
     rewardStorageValid = true;
-    log.push("Enrollment restored. Connect wallet and refresh pool state.");
+    log.push("Recovery restored. Refresh the Preprod pool before treating any transaction as confirmed.");
   });
 })();

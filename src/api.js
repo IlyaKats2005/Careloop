@@ -1,6 +1,7 @@
 import {NETWORK,NETWORK_MAGIC} from './network.js';
 import {DEFAULT_PROGRAM_ID,getProgram,normalizeProgram,programAIContext} from './programs.js';
 import {authAPI} from './auth.js';
+import {dataAPI} from './data-api.js';
 const priorities=new Set(['routine','review_requested','priority_review']);
 const allowedFields=new Set(['medication','status','dose','lastDose','missed','changes','symptoms','urgent','impact','hydration','details','contact','notes']);
 export function validateProgramInput(body){
@@ -67,10 +68,20 @@ export async function analyze(answers,env,fetcher=fetch,program=getProgram(DEFAU
   const result=validateOutput(JSON.parse(content),answers);
   return {status:200,body:{...result,programId:context.id,programModelStatus:'demo-untrained',model:raw.modelVersion||raw.model||model,provider:provider==='gemini'?'Gemini':'OpenRouter',clinical_validation:false,approval:false,created_at:new Date().toISOString()}};
 }
+function reserveAnalysisQuota(request,env){
+  if(!env.OPENROUTER_API_KEY&&!env.GEMINI_API_KEY)return null;
+  const key=request.headers.get('cf-connecting-ip')||'local',now=Date.now();
+  if(!globalThis.careloopRate)globalThis.careloopRate=new Map();const rates=globalThis.careloopRate;
+  for(const [k,v] of rates)if(now-v.at>3600000)rates.delete(k);
+  const rate=rates.get(key)||{at:now,count:0};
+  if(rate.count>=6||rates.size>=1000&&!rates.has(key))return {status:429,body:{error:'DEMO_RATE_LIMIT',message:'Demo request limit reached. Try again later; your report is saved.'}};
+  rate.count++;rates.set(key,rate);return null;
+}
 export async function api(request,env={}){
   const url=new URL(request.url);
   const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   const authResponse=await authAPI(request,env);if(authResponse)return authResponse;
+  const dataResponse=await dataAPI(request,env,{analyze:(answers,settings,fetcher,program)=>reserveAnalysisQuota(request,settings)||analyze(answers,settings,fetcher,program)});if(dataResponse)return dataResponse;
   if(url.pathname==='/api/status')return json({ai:{configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser + local Aiken tests',setup:'development-only'},chain:{connected:false,network:NETWORK.toLowerCase(),networkMagic:NETWORK_MAGIC,masumiNetwork:NETWORK.toLowerCase(),message:'Patient rewards and Masumi target Cardano Preprod. Connect a wallet and check the pool in My rewards.'},mode:'fictional-demo'});
   if(url.pathname!=='/api/analyze')return json({error:'Not found'},404);
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
@@ -79,12 +90,6 @@ export async function api(request,env={}){
   const reader=request.body?.getReader();if(!reader)return json({error:'Body required'},400);
   let chunks=[],size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>32000){await reader.cancel();return json({error:'Request too large'},413);}chunks.push(value);}
   let answers,program;try{const body=JSON.parse(new TextDecoder().decode(Uint8Array.from(chunks.flatMap(x=>[...x]))));program=validateProgramInput(body);answers=validateInput(body);}catch(e){return json({error:e.message},400);}
-  // Best-effort demo throttle per isolate, not a production distributed quota.
-  const key=request.headers.get('cf-connecting-ip')||'local';const now=Date.now();
-  if(!globalThis.careloopRate)globalThis.careloopRate=new Map();const rates=globalThis.careloopRate;
-  for(const [k,v] of rates)if(now-v.at>3600000)rates.delete(k);
-  const rate=rates.get(key)||{at:now,count:0};
-  if(rate.count>=6||rates.size>=1000&&!rates.has(key))return json({error:'Demo request limit reached. Try again later.'},429);
-  if(env.OPENROUTER_API_KEY||env.GEMINI_API_KEY){rate.count++;rates.set(key,rate);}
+  const quota=reserveAnalysisQuota(request,env);if(quota)return json(quota.body,quota.status);
   try{const result=await analyze(answers,env,fetch,program);return json(result.body,result.status);}catch{return json({error:'AI_RESULT_REJECTED',message:'The model timed out or returned an invalid/unsupported result. No approval was issued.'},502);}
 }

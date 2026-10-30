@@ -2,6 +2,19 @@
   "version": "7",
   "dialect": "sqlite",
   "entries": [
-    {"idx": 0, "version": "6", "when": 1793380200000, "tag": "0000_email_auth", "breakpoints": true}
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1793380200000,
+      "tag": "0000_email_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793380200001,
+      "tag": "0001_workspace_data",
+      "breakpoints": true
+    }
   ]
 }
