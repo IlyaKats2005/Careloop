@@ -51,7 +51,15 @@ Earlier verified integration evidence:
 - Claim: https://preprod.cardanoscan.io/transaction/3cdc05fd37d24ce89529db27057ffdcd44b9eef40269888cc3ebf1faf6fa0b10
 - Result: pool 20 → 18 test ADA, participant received 2 test ADA, nullifier recorded.
 
-These are historical receipts. For the new live form-to-payment demonstration, record the new report ID, funding transaction and confirmed claim transaction after the run. Do not reuse an old hash as proof of payment for a new report.
+Fresh automatic website run, confirmed 30 October 2026 at 20:24 Berlin time (19:24 UTC):
+
+- Report: `R-e5b222bf-2805-4c60-a85b-49f335b3563c`
+- Funding: https://preprod.cardanoscan.io/transaction/3ab289b65292f64d19211436b9c417c725d332431dad72c9bd1ff5a67f6e3bb1
+- Claim: https://preprod.cardanoscan.io/transaction/822634daddc045a367669ebba5d6c07af7d3ec071c984cabb1c26c27e479f2e5
+- Result: participant received 2 test ADA; pool retained 18 test ADA.
+- Saved relay verification: [live-form-payment.json](live-form-payment.json).
+
+These receipts belong to this completed run. A new demonstration must show its own report and transaction, not reuse these as its payout.
 
 ## What must be submitted
 

@@ -1,0 +1,35 @@
+{
+  "network": "Preprod",
+  "networkMagic": 1,
+  "reportId": "R-e5b222bf-2805-4c60-a85b-49f335b3563c",
+  "funding": {
+    "kind": "fund",
+    "network": "Preprod",
+    "txHash": "3ab289b65292f64d19211436b9c417c725d332431dad72c9bd1ff5a67f6e3bb1",
+    "recipientAddress": "addr_test1qrhvq3e60sacjs7xv7wm2l8qz6ec4qg6c83l9acs9e4lrgnryw08ujcycn0yd28kap7wfqcx935495z9aeqpvnzh48zszjal59",
+    "amount": "2000000",
+    "amountLovelace": "2000000",
+    "poolRemainingLovelace": "20000000",
+    "verified": true,
+    "blockHeight": 5354274,
+    "verifiedAt": "2026-10-30T19:22:22.435Z"
+  },
+  "claim": {
+    "kind": "claim",
+    "network": "Preprod",
+    "txHash": "822634daddc045a367669ebba5d6c07af7d3ec071c984cabb1c26c27e479f2e5",
+    "recipientAddress": "addr_test1qrhvq3e60sacjs7xv7wm2l8qz6ec4qg6c83l9acs9e4lrgnryw08ujcycn0yd28kap7wfqcx935495z9aeqpvnzh48zszjal59",
+    "amount": "2000000",
+    "amountLovelace": "2000000",
+    "poolRemainingLovelace": "18000000",
+    "nullifier": "865346834509292837085044223830701538062559445157157718117123804889824670388",
+    "verified": true,
+    "blockHeight": 5354280,
+    "verifiedAt": "2026-10-30T19:24:05.545Z"
+  },
+  "source": "Confirmed receipts saved by sponsor relay during the live website run",
+  "limitations": [
+    "Fictional report and test ADA only.",
+    "Confirmation was recorded by the relay; no new independent explorer query succeeded in the resumed session."
+  ]
+}

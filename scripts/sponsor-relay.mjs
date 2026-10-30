@@ -25,6 +25,7 @@ const secrets=[token];
 const safeError=error=>{let value=String(error?.message||error);for(const secret of secrets)if(secret)value=value.replaceAll(secret,'[REDACTED]');return value.slice(0,700);};
 const encode=value=>JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v,2);
 let stopped=false,locked=false,journal,lucid,provider;
+const observedJobs=new Map();
 const budget={maxJobs,maxSpendLovelace:BigInt(maxSpendADA)*1000000n};
 async function persist(){
  const file=await open(statePath+'.tmp','w',0o600);
@@ -66,6 +67,7 @@ async function retryExact(record,beforeBroadcast){
  if(record.status==='confirmed')return;
  if(record.lastAttemptAt&&Date.now()-Date.parse(record.lastAttemptAt)<60000)return;
  record.lastAttemptAt=new Date().toISOString();await persist();
+ output({event:'submission_starting',txHash:record.hash,message:'Saving the transaction reference, then broadcasting these exact signed bytes.'});
  try{await submitJournaledTransaction(record,{submit:cbor=>provider.submitTx(cbor),persist,beforeBroadcast});output({event:'transaction_submitted',txHash:record.hash});}
  catch(error){record.lastSubmissionError=safeError(error);await persist();output({event:'submission_pending',txHash:record.hash,message:'Signed bytes retained. The relay will verify or retry this same transaction.',detail:safeError(error)});}
 }
@@ -85,6 +87,7 @@ async function ensureSeed(job,record){
 }
 async function processJob(job,leaseToken){
  validateJob(job);const fingerprint=jobFingerprint(job);
+ if(observedJobs.get(job.id)!==job.state){observedJobs.set(job.id,job.state);output({event:'job_progress',reportId:job.reportId,state:job.state,stage:job.stage});}
  let record=journal.jobs[job.id];
  if(record&&record.fingerprint!==fingerprint)throw Error('Immutable sponsor job changed; refusing to spend.');
  if(!record){record=journal.jobs[job.id]={fingerprint,reportId:job.reportId,recipientAddress:job.recipientAddress};await persist();}
@@ -100,6 +103,7 @@ async function processJob(job,leaseToken){
    const prepared=await preparePool(lucid,blueprint,vk,{...job.approval.c,root:job.approval.root});
    dep=prepared.dep;record.dep=publicRewardDeployment(dep);await persist();
    await journalSignedTransaction({journal,jobId:job.id,kind:'fund',tx:prepared.tx,persist,extra:{dep:record.dep},...budget});
+   output({event:'funding_prepared',reportId:job.reportId,txHash:record.fund.hash});
   }
   const hash=record.fund?.hash||remoteHash;
   if(!hash||!dep)throw Error('Saved sponsor funding metadata is incomplete.');
@@ -120,6 +124,7 @@ async function processJob(job,leaseToken){
   if(pool.state.used.includes(claim.publicSignals[1]))throw Error('This nullifier is already spent. A replacement payout is forbidden.');
   const tx=await prepareClaim(lucid,dep,claim,job.recipientAddress);
   await journalSignedTransaction({journal,jobId:job.id,kind:'claim',tx,persist,extra:{nullifier:claim.publicSignals[1]},...budget});
+  output({event:'claim_prepared',reportId:job.reportId,txHash:record.claim.hash});
  }
  const hash=record.claim?.hash||remoteHash;
  if(await chainConfirmed(hash)){
