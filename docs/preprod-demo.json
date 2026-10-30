@@ -1,0 +1,24 @@
+{
+  "network": "Preprod",
+  "networkMagic": 1,
+  "verifiedAt": "2026-10-30T18:25:05.040Z",
+  "masumi": {
+    "amount": "1 test USDM",
+    "settled": true,
+    "withdrawalTx": "e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1"
+  },
+  "patientReward": {
+    "fundingTx": "f7b17e0f0f34ad3f8406c9f22e21e90c9c5d0c1fc33468ae32217013f88dbc13",
+    "claimTx": "3cdc05fd37d24ce89529db27057ffdcd44b9eef40269888cc3ebf1faf6fa0b10",
+    "poolFundedLovelace": "20000000",
+    "patientNetLovelace": "2000000",
+    "poolRemainingLovelace": "18000000",
+    "nullifierRecorded": true,
+    "duplicateCheck": "Client rejected duplicate using confirmed on-chain nullifier; no duplicate transaction submitted"
+  },
+  "limitations": [
+    "Live patient test used dedicated local signing wallets; browser wallet onboarding is a separate UI flow.",
+    "Fictional reports and disposable test tokens only.",
+    "This does not establish clinical validity or global identity uniqueness."
+  ]
+}

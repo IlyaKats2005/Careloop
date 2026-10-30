@@ -21,6 +21,16 @@ Fictional questionnaire → external AI suggestion → human clinic approval →
 - AI requests may be processed/stored by the external model provider. Only fictional input is permitted. Removing a name does not make a clinical narrative anonymous.
 - Both the Masumi/Sokosumi service-payment flow and the patient-reward pool now target **Cardano Preprod**. They still use separate contracts and payment flows: Masumi pays the AI service; this pool rewards the participant. Sharing a network does not connect them automatically, and the Masumi payment is not evidence of a live patient claim.
 
+## Verified on Cardano Preprod
+
+Both payment flows have completed on **Preprod (network magic 1)** using disposable test funds. Public evidence is recorded in [`docs/preprod-demo.json`](docs/preprod-demo.json).
+
+- **Masumi AI-service payment:** the seller received exactly **1 test USDM**. [Confirmed withdrawal](https://preprod.cardanoscan.io/transaction/e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1).
+- **Patient reward:** a real Groth16 proof passed the on-chain Plutus V3 validator and paid exactly **2 test ADA** to a separate demonstration participant. [Confirmed claim](https://preprod.cardanoscan.io/transaction/3cdc05fd37d24ce89529db27057ffdcd44b9eef40269888cc3ebf1faf6fa0b10). The pool retained its state NFT, decreased from 20 to 18 test ADA, and recorded the nullifier.
+- A repeated claim preparation was rejected using the confirmed on-chain nullifier. No duplicate transaction was broadcast. Validator-level tamper/duplicate tests also run in the emulator.
+
+The live patient test used dedicated local signing wallets. The website wallet flow remains separately signed by the connected browser wallet; this receipt is not evidence of real clinic authentication or a trained medical model.
+
 ## Run locally
 
 Node 24+:
