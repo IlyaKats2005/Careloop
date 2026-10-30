@@ -1,7 +1,8 @@
 import {assets} from '../.local/assets.js';
+import {cardanoProxy} from './cardano-proxy.js';
 import {api} from './api.js';
 export default {async fetch(request,env){
- const url=new URL(request.url);if(url.pathname.startsWith('/api/'))return api(request,env);
+ const url=new URL(request.url);if(url.pathname.startsWith('/cardano/'))return cardanoProxy(request);if(url.pathname.startsWith('/api/'))return api(request,env);
  if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
  const asset=assets[url.pathname==='/'?'/index.html':url.pathname];if(!asset)return new Response('Not found',{status:404});
  const headers={'Content-Type':asset.type,'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cache-Control':'no-cache'};

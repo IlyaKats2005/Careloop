@@ -1,0 +1,26 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';
+import {Emulator,generateEmulatorAccount,Koios} from '@lucid-evolution/lucid';
+import {groth16} from 'snarkjs';
+import {Lucid,preparePool,prepareClaim,readPool,paymentKey,transactionSummary} from '../src/cardano.js';
+import {config,commitment,leaf,tree,witness} from '../src/zk-core.js';
+test('real serialized Plutus transactions: fund, proof claim, duplicate and tamper',async()=>{
+ const clinic=generateEmulatorAccount({lovelace:100000000n}),patient=generateEmulatorAccount({lovelace:100000000n});
+ const params=process.env.CARELOOP_LIVE_PARAMS?await new Koios('https://preview.koios.rest/api/v1').getProtocolParameters():undefined;
+ const em=new Emulator([clinic,patient],params);const l=await Lucid(em,'Preview');l.selectWallet.fromSeed(clinic.seedPhrase);
+ const blueprint=JSON.parse(await readFile('contracts/plutus.json')),vk=JSON.parse(await readFile('public/zk/verification_key.json'));
+ const secret='45678',leaves=Array.from({length:8},(_,i)=>leaf(commitment(String(i+10))));leaves[2]=leaf(commitment(secret));const path=tree(leaves,2);
+ const {tx,dep}=await preparePool(l,blueprint,vk,{...config,root:path.root});
+ console.log('Funding',transactionSummary(tx));await (await tx.sign.withWallet().complete()).submit();em.awaitBlock();
+ const before=await readPool(l,dep);assert.equal(before.utxo.assets.lovelace,20000000n);
+ l.selectWallet.fromSeed(patient.seedPhrase);const recipientAddress=await l.wallet().address();
+ const w=witness(secret,path,BigInt('0x'+paymentKey(recipientAddress)).toString());
+ const claim=await groth16.fullProve(w,'public/zk/reward.wasm','public/zk/reward.zkey',null,{}, {singleThread:true});
+ const altered={...claim,publicSignals:[...claim.publicSignals]};altered.publicSignals[7]=(BigInt(altered.publicSignals[7])+1n).toString();
+ await assert.rejects(()=>prepareClaim(l,dep,altered,recipientAddress));
+ const valid=await prepareClaim(l,dep,claim,recipientAddress);console.log('Claim',transactionSummary(valid));
+ await (await valid.sign.withWallet().complete()).submit();em.awaitBlock();
+ const after=await readPool(l,dep);assert.equal(after.utxo.assets.lovelace,18000000n);assert.deepEqual(after.state.used,[claim.publicSignals[1]]);
+ const outputs=await l.utxosAt(recipientAddress);assert.ok(outputs.some(u=>u.assets.lovelace===2000000n));
+ await assert.rejects(()=>prepareClaim(l,dep,claim,recipientAddress),/Already claimed/);
+ await assert.rejects(()=>prepareClaim(l,dep,claim,clinic.address),/does not belong/);
+});

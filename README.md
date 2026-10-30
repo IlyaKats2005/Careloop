@@ -1,11 +1,11 @@
 # Careloop — private research-reward demo
 
-Fictional questionnaire → external AI suggestion → human clinic approval → browser-generated Groth16 proof → local reward simulation.
+Fictional questionnaire → external AI suggestion → human clinic approval → browser-generated Groth16 proof → wallet-signed Cardano Preview reward.
 
 ## Implemented
 
 - Existing participant/clinic UI, with separate AI and clinic actions.
-- Server-only Gemini / OpenRouter adapter (`POST /api/analyze`), restricted to free models, with timeouts, bounded inputs, JSON/evidence checks and explicit errors. The model cannot approve payment.
+- Server-only Gemini / OpenRouter adapter (`POST /api/analyze`), with a configured Gemini model or optional OpenRouter free model, with timeouts, bounded inputs, JSON/evidence checks and explicit errors. The model cannot approve payment.
 - Real **Groth16 over BLS12-381** proof generation and verification in the participant browser. The secret and Merkle path are not sent to the API.
 - Circom approval-membership circuit, including program/period/domain scoping, a deterministic nullifier and payout-key binding.
 - Compiled Aiken Plutus V3 reward validator, plus one-shot state-NFT minting policy. Actual generated proofs are tested in Aiken.
@@ -13,8 +13,8 @@ Fictional questionnaire → external AI suggestion → human clinic approval →
 
 ## Not connected / not production
 
-- No live AI call until a provider API key is configured on the server. There is **no silent fake response fallback**.
-- No Cardano transaction has been submitted. The UI settlement is explicitly a browser-local simulation; resetting/reloading resets its state. The on-chain validator, rather than browser storage, enforces durable duplicate prevention after deployment.
+- Hosted Gemini calls are configured and tested. Local development needs a server-side provider key. There is **no silent fake response fallback**.
+- Cardano Preview funding and claiming transactions are implemented and evaluated with Lucid. Submission requires the user’s connected wallet signature. No live transaction is claimed without a confirmed hash. Browser session storage preserves the enrollment across reloads; private recovery export is available. On-chain state enforces duplicate prevention within a funded pool.
 - No real clinic authentication, secure medical record store, or identity deduplication. Role switching and the eight-entry approval batch are fictional demonstration controls, not access control. Clinic and patient run in the same browser for the demo.
 - No clinical validation, private payment rail, or anonymity guarantee. Program, period, amount, recipient and nullifier are public. Small batches, timing, known wallets, repeated recipients and network metadata can reveal connections.
 - Development-only single-machine setup. Do not use real funds. Review circuit and upstream hash parameters, perform an independent security audit and a suitable ceremony before any production deployment.
@@ -33,7 +33,7 @@ npm run dev
 
 Open http://localhost:8787. Existing public proving artifacts are committed, so no ceremony is required to try the demo.
 
-To enable the free AI, create a Gemini API key, put it in an **untracked** `.env` using `.env.example`, and launch:
+To enable the AI, create a Gemini API key, put it in an **untracked** `.env` using `.env.example`, and launch:
 
 ```sh
 node --env-file=.env scripts/dev.mjs
@@ -51,11 +51,14 @@ For the hosted Site, set `GEMINI_API_KEY`, `AI_PROVIDER` and `AI_MODEL` using th
 2. Switch to Clinic → review Alex's Week 04 report.
 3. Click Analyze fictional report (requires the server key). Inspect the suggestion; it does not change approval.
 4. Confirm eligibility and approve the reward.
-5. Participant → My rewards → Generate ZK proof.
-6. Verify & simulate reward. Try duplicate claim, then Test changed recipient.
-7. Inspect the public claim: proof, root, scoped nullifier and payout information, no secret or questionnaire.
+5. Open the site in a wallet-enabled browser. Switch the wallet to **Preview** (not Preprod), obtain free test ADA, and connect it from My rewards.
+6. Download the private recovery file. Prepare a 20-test-ADA pool. Review outputs and fee, then personally sign and submit in your wallet. The wallet needs a pure ADA UTxO of at least 25 ADA plus separate collateral; use its send/split feature if needed.
+7. Refresh on-chain state after confirmation. Download recovery again to include the deployed pool configuration.
+8. Connect the recipient wallet (the same wallet is supported for this demo), generate the proof, and prepare a 2-test-ADA claim. Personally sign and submit. Refresh after confirmation.
+9. A second preparation of the same claim is rejected from the on-chain nullifier. Test changed recipient checks proof binding locally.
+10. The explorer link shows the submitted transaction. The UI distinguishes submission from confirmation.
 
-Only one approved report per session is supported. Eight entries form the synthetic batch; they do not represent eight real independent patients. Reload starts a new demo.
+Only one approved report per session is supported. Eight entries form the synthetic batch; they do not represent eight real independent patients. Enrollment, approval and pool configuration survive reload in session storage, but questionnaires remain fictional in-memory examples. Closing the tab may clear the enrollment; keep the recovery file private.
 
 ## Tests
 
@@ -87,9 +90,11 @@ Public signals, in order: root, nullifier, program, period, amount (lovelace), r
 
 The circuit checks a depth-3 approved Merkle tree. Its leaf commits to the enrollment commitment, deployment domain, program, period and amount. The nullifier commits to the participant secret and scoped program/period/domain. The recipient-binding hash forces the recipient into the proof statement. All public scalars are checked for canonical field representation in the validator.
 
-The pool is identified by a unique NFT, minted once using an input UTxO. The clinic alone can replace the approved root, with all other state and value preserved. A claim preserves the NFT/script and remaining assets, pays the exact reward to an enterprise key address and appends the nullifier. Fees come from a separate funding input. A maximum of eight claims keeps the experimental datum bounded. This version has one fixed reporting period per pool, no top-up/close/recovery action, and no batching scalability claim.
+The pool is identified by a unique NFT, minted once using an input UTxO. The clinic alone can replace the approved root, with all other state and value preserved. A claim preserves the NFT/script and remaining assets, pays the exact reward to an address controlled by the proof-bound payment key (base or enterprise address) and appends the nullifier. Fees come from a separate funding input. A maximum of eight claims keeps the experimental datum bounded. This version has one fixed reporting period per pool, no top-up/close/recovery action, and no batching scalability claim.
 
-Deployment still requires choosing actual clinic signer / seed UTxO / unique domain, parameterising the scripts with the **matching** verification key, initialising the NFT-bearing pool with correct program/period/root/budget, building and evaluating actual transactions with current Preprod protocol parameters, and wallet signing. The included blueprint is unparameterised, not a deployed contract. No mainnet deployment is supported by this demo.
+The browser chooses the clinic signer from the connected wallet and an available seed UTxO, parameterises both scripts with the matching verification key, and builds the NFT-bearing pool transaction. Enrollment approval creates a random domain. Lucid evaluates transactions with current Preview protocol parameters from public Koios, then the user signs. No mainnet deployment is supported. The 20-test-ADA pool reserves 4 ADA and has no refund path; only disposable test ADA should be used.
+
+`tests/cardano.test.mjs` executes the actual serialized funding and claim transactions through Lucid’s Cardano emulator, including Plutus evaluation, checks exact payout/state, and rejects tampered proofs, wrong wallets and duplicate claims. This is not evidence of a live Preview transaction; that requires a wallet signature and network confirmation.
 
 The scope/domain must be unique for the intended logical pool; duplicate prevention is within that pool, not global identity deduplication. Do not initialise multiple independently funded pools for the same program/period and claim they share spent state.
 

@@ -34,7 +34,7 @@ validator rewards(clinic: ByteArray, state_policy: ByteArray, state_name: ByteAr
     expect next.value==assets.add(own.output.value,#"",#"",-s.amount)
     expect list.any(tx.outputs,fn(o){
      o.address.payment_credential==VerificationKey(recipient) &&
-     o.address.stake_credential==None && assets.lovelace_of(o.value)==s.amount
+     assets.lovelace_of(o.value)==s.amount
     })
     proof.verify(vk,p,[s.root,nullifier,s.program,s.period,s.amount,builtin.bytearray_to_integer(True,recipient),s.domain,binding])
    }
