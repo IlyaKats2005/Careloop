@@ -267,11 +267,11 @@ test('four-client UI supports enrolling Sam and restarting against the real work
  assert.equal(await DB.prepare('SELECT count(*) AS n FROM care_reports').first('n'),1);
  assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
  const fresh=await workspace({backend,storage:ui.storage});await fresh.run("enterWorkspace('patient')");assert.equal(fresh.data('cloudWorkspace.id'),ui.data('cloudWorkspace.id'));assert.equal(fresh.data('demoClientId'),'alex');
- await fresh.run("switchRole('sponsor')");assert.match(fresh.html(),/Fund the next check-in/);assert.equal(fresh.data('funding.available'),750);
- fresh.run("fundingForm={bucket:'rewards',amount:25}");await fresh.run("allocateCredits('reserve')");assert.equal(fresh.data('funding.available'),725);assert.equal(fresh.data('funding.clinic.rewards'),225);
+ await fresh.run("switchRole('sponsor')");assert.match(fresh.html(),/Your AI and client budgets/);assert.match(fresh.html(),/data-budget="ai"/);assert.match(fresh.html(),/data-budget="rewards"/);assert.match(fresh.html(),/fundingAmount-ai/);assert.match(fresh.html(),/fundingAmount-rewards/);assert.equal(fresh.data('funding.available'),750);
+ fresh.run("fundingAmounts.rewards=25");await fresh.run("allocateCredits('reserve','rewards')");assert.equal(fresh.data('funding.available'),725);assert.equal(fresh.data('funding.clinic.rewards'),225);assert.equal(fresh.data('funding.clinic.ai'),50);
  await fresh.run("switchRole('clinic')");assert.match(fresh.html(),/Ready to fund care/);assert.equal(fresh.data('funding.clinic.rewards'),225);
- const sponsorTab=await workspace({backend});await sponsorTab.run("enterWorkspace('sponsor')");sponsorTab.run("fundingForm={bucket:'ai',amount:20}");await sponsorTab.run("allocateCredits('reserve')");
- await fresh.run('loadFunding()');assert.equal(fresh.data('funding.clinic.ai'),70);assert.equal(fresh.data('funding.available'),705);
+ const sponsorTab=await workspace({backend});await sponsorTab.run("enterWorkspace('sponsor')");sponsorTab.run("fundingAmounts.ai=20");await sponsorTab.run("allocateCredits('reserve','ai')");
+ await fresh.run('loadFunding()');assert.equal(fresh.data('funding.clinic.ai'),70);assert.equal(fresh.data('funding.available'),705);assert.equal(fresh.data('funding.clinic.rewards'),225);
  const beforeRefresh=fresh.data('cloudWorkspace.id');await fresh.run('refreshDemoOrWorkspace()');assert.notEqual(fresh.data('cloudWorkspace.id'),beforeRefresh);assert.equal(fresh.data('funding.available'),750);assert.equal(fresh.data('funding.clinic.rewards'),200);
  const reloaded=await workspace({backend,storage:fresh.storage,browserReload:true});await reloaded.run("enterWorkspace('clinic')");assert.notEqual(reloaded.data('cloudWorkspace.id'),fresh.data('cloudWorkspace.id'));assert.equal(reloaded.data('funding.available'),750);assert.equal(reloaded.data('reports.length'),0);
  assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,3);
