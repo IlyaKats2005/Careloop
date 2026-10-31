@@ -255,7 +255,7 @@ test('paid result needs confirmed funding, an immutable matching hash and a vali
  await call(DB,`/api/data/reports/${id}/analyze`,{cookie:patient.cookie,method:'POST',body:{billing:'masumi'},env:paidEnv});
  let lease=(await paidCall(DB,'lease',{workerId:'test'})).body;
  const resultText=JSON.stringify({...cleanAI,programId:program.id,model:'fixture'});
- const body={leaseToken:lease.leaseToken,inputHash:lease.job.inputHash,state:'result_ready',blockchainIdentifier:'fixed-payment',agentIdentifier:'fixed-agent',sellerAddress:'fixed-seller',resultHash:await hashText(lease.job.nonce+';'+resultText),resultText};
+ const body={leaseToken:lease.leaseToken,inputHash:lease.job.inputHash,state:'result_ready',blockchainIdentifier:'p'.repeat(1124),agentIdentifier:'fixed-agent',sellerAddress:'fixed-seller',resultHash:await hashText(lease.job.nonce+';'+resultText),resultText};
  assert.equal((await paidCall(DB,'jobs/'+lease.job.id,body)).status,400);
  body.fundingTxHash='a'.repeat(64);body.resultTxHash='b'.repeat(64);
  assert.equal((await paidCall(DB,'jobs/'+lease.job.id,{...body,resultText:resultText+' '})).status,409);

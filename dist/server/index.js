@@ -1167,7 +1167,7 @@ function checkedMetadata(body, job) {
   if (!states.includes(body.state) && body.state !== "blocked") throw fail4("Invalid paid job state.");
   if (body.state !== "blocked" && job.state !== "blocked" && states.indexOf(body.state) < states.indexOf(job.state)) throw fail4("A confirmed paid job cannot move backwards.", 409);
   for (const key of ["blockchainIdentifier", "agentIdentifier", "sellerAddress", "jobId"]) if (body[key] !== void 0) {
-    if (typeof body[key] !== "string" || !body[key] || body[key].length > 1e3) throw fail4("Invalid payment identity.");
+    if (typeof body[key] !== "string" || !body[key] || body[key].length > (key === "blockchainIdentifier" ? 4096 : 1e3)) throw fail4("Invalid payment identity.");
     if (old[key] && body[key] !== old[key]) throw fail4("The paid job identity is immutable.", 409);
     m[key] = body[key];
   }

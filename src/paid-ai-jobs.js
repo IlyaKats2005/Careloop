@@ -49,7 +49,7 @@ function checkedMetadata(body,job){
  if(!states.includes(body.state)&&body.state!=='blocked')throw fail('Invalid paid job state.');
  if(body.state!=='blocked'&&job.state!=='blocked'&&states.indexOf(body.state)<states.indexOf(job.state))throw fail('A confirmed paid job cannot move backwards.',409);
  for(const key of ['blockchainIdentifier','agentIdentifier','sellerAddress','jobId'])if(body[key]!==undefined){
-  if(typeof body[key]!=='string'||!body[key]||body[key].length>1000)throw fail('Invalid payment identity.');
+  if(typeof body[key]!=='string'||!body[key]||body[key].length>(key==='blockchainIdentifier'?4096:1000))throw fail('Invalid payment identity.');
   if(old[key]&&body[key]!==old[key])throw fail('The paid job identity is immutable.',409);m[key]=body[key];
  }
  for(const key of ['fundingTxHash','resultTxHash','settlementTxHash','resultHash'])if(body[key]!==undefined){
