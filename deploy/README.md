@@ -30,7 +30,7 @@ docker compose -f deploy/compose.yaml ps
 
 The preflight is read-only. Starting the service authorizes existing queued Preprod jobs within its configured limits. Docker restarts an exited process after failure or host restart; it does not automatically replace uncertain transactions. A health check turns unhealthy if the worker stops successfully heartbeating. It does not prove sufficient funds or network transaction confirmation.
 
-Open **Demo readiness** in Careloop and verify a fresh online heartbeat. Then perform a fresh questionnaire-to-payout run. Do not call the migration complete until that report's new transaction confirms.
+Open **Demo tools → Check payment service → Check service** in Careloop and verify a fresh online heartbeat. Then perform a fresh questionnaire-to-payout run. Do not call the migration complete until that report's new transaction confirms.
 
 ## Operations
 

@@ -2,13 +2,13 @@
 
 ## Gate before recording
 
-Open **Demo readiness**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Do not consume the final budget slot in rehearsal if you need another new payout for judging.
+Open **Demo tools → Check payment service → Check service**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Do not consume the final budget slot in rehearsal if you need another new payout for judging. See [the run guide](RUNNING.md) for the exact operator command.
 
 When the sponsor allowance is increased, the worker automatically queues previously approved reports that were blocked by that limit. It rechecks policy eligibility and preserves existing payment jobs and transaction references. No further clinic approval is needed. A funded wallet and the worker's local spending allowance are also required.
 
 ## Four clients and restart
 
-Enter the participant or clinic demo and open **Demo clients**. Alex Morgan, Maya Chen and Noah Bennett are already enrolled; Sam Rivera is registered but has not joined a program. All four have distinct Preprod receiving wallets saved in their profiles. Wallet addresses are public; their recovery keys are kept outside the app source.
+Enter the participant or clinic demo and open **Demo tools → Choose participant**. Alex Morgan, Maya Chen and Noah Bennett are already enrolled; Sam Rivera is registered but has not joined a program. All four have distinct Preprod receiving wallets saved in their profiles. Wallet addresses are public; their recovery keys are kept outside the app source.
 
 Open Sam, choose **Use invitation**, then **Join program** to demonstrate enrollment. Switch to another client to show their separate reports and enrollment state. The clinic workspace shows the whole cohort.
 
@@ -18,16 +18,16 @@ Every new demo has **1,000 app credits**: 750 available to the sponsor, 200 rese
 
 These are resettable **app accounting credits**, not a wallet balance or a model provider invoice. Allocating credits does not create an on-chain deposit. The real Cardano funding and claim still use the separate live sponsor. Restart preserves old server records, blockchain transactions and private enrollment recovery state. It does not replenish real wallets or reset the live payment allowance.
 
-The website and database are hosted. ZK proofs run in each participant's browser. Until the separate hosting migration is completed, the sponsor payment worker and Masumi service run locally.
+The website and database are hosted. ZK proofs run in each participant's browser. Until the separate hosting migration is completed, the sponsor payment worker runs locally. The separate paid AI demonstration also uses local Masumi services, which are unnecessary for the normal website check-in and participant reward.
 
 ## Successful case
 
-1. Open Alex, Maya or Noah through **Demo clients**, or enroll Sam first, then open a check-in.
+1. Open Alex, Maya or Noah through **Demo tools → Choose participant**, or enroll Sam first, then open a check-in.
 2. Show the wallet already saved in the profile; there is no address to paste into the form. The demo creates the private enrollment key automatically on first use. Download its recovery file and keep the download out of the recording. Ordinary participant registration asks for a receiving address once and remembers it across logins.
 3. Enter complete fictional answers that agree: taking medication as prescribed, no missed doses, no new symptoms, no impact, able to keep fluids down, no contact requested. Fill the exact questions of the selected program.
 4. Review, consent and submit. Do not click clinic approval.
 5. Show the saved report ID and actual decision. If it goes on hold, show that result and inspect the reason; do not describe it as an automatic pass.
-6. Keep the page open. Funding confirmation triggers the private proof; the sponsor pays fees. Wait for the new claim's verified receipt, then open its explorer link and inspect the 2-ADA recipient output.
+6. Keep the participant's **My rewards**, **My reports**, or submitted report open. Funding confirmation triggers the private proof; the sponsor pays fees. Wait for the new claim's verified receipt, then open its explorer link and inspect the 2-ADA recipient output.
 
 ## Hold case
 

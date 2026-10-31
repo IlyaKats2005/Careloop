@@ -3,11 +3,12 @@
 ## Project links
 
 - App: https://careloop-study-prototype.perasperaadastra3008.chatgpt.site
-- Intended public repository: https://github.com/IlyaKats2005/Careloop
-- Reproduction: [README](../README.md), [live demonstration](LIVE-DEMO.md), [paid Masumi agent](../integrations/masumi/README.md)
+- GitHub repository: https://github.com/IlyaKats2005/Careloop
+- Reproduction: [README](../README.md), [local-service instructions](RUNNING.md), [live demonstration](LIVE-DEMO.md), [paid Masumi agent](../integrations/masumi/README.md)
+- Precise blockchain rationale, payment flow and privacy boundaries: [architecture](ARCHITECTURE.md)
 - Confirmed historical transactions: [preprod-demo.json](preprod-demo.json)
 
-The repository link is the intended publication destination; verify it is publicly accessible before submission. Do not claim this document itself is a completed Devfolio submission.
+Verify the latest source and these documents are visible at the repository URL before submission. This document is not itself a completed Devfolio submission.
 
 ## The problem and customer
 
@@ -23,8 +24,15 @@ Careloop connects these tasks: configurable questionnaires, an AI-assisted revie
 - A bounded Preprod sponsor relay, browser-generated zero-knowledge proofs, exact 2-test-ADA payouts and confirmed transaction evidence.
 - A separate Masumi-paid questionnaire-analysis service, with result hashes and an independently checked seller receipt.
 - A blockchain visualization that distinguishes illustrative walkthroughs, observed live state and historical evidence.
+- Separate sponsor budgets for AI and participant rewards; three enrolled demo clients and one ready to enroll; saved receiving wallets; persistent refresh and an explicit restart control.
 
 The current model is Gemini with program-specific instructions. It is not a trained or clinically validated medical model.
+
+## Why blockchain
+
+Sponsor and participant can independently inspect actual contract funding and payouts. The contract checks the proof, recipient, amount and unused claim marker, so a clinic's private database is not the sole evidence of payment. Ordinary eligible reports can trigger direct sponsor-funded rewards without clinic staff manually sending every transfer. ZK allows the chain to verify approved membership without publishing the questionnaire or enrollment secret.
+
+This decentralizes settlement, not the entire application. Accounts, reports, AI calls and approval policy still use the hosted backend, and the relay remains a separate local process. The backend and external AI provider can access report data; the demo roles do not guarantee sponsor/clinic confidentiality. “Only the clinic knows the data” is not a property implemented by the current proof. App budget credits are off-chain, and a participant-facing view of the clinic's full sponsor allocation remains a product goal. See [the architecture explanation](ARCHITECTURE.md) for the exact boundaries.
 
 ## Cardano implementation and evidence
 

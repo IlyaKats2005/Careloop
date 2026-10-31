@@ -2,9 +2,28 @@
 
 **A fictional research check-in becomes either an authorized reward or a visible hold. A private proof releases the reward on Cardano Preprod.**
 
-[Open the app](https://careloop-study-prototype.perasperaadastra3008.chatgpt.site) · [Live demo guide](docs/LIVE-DEMO.md) · [Hackathon submission](docs/SUBMISSION.md) · [Masumi agent setup](integrations/masumi/README.md)
+[Open the app](https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/) · [GitHub](https://github.com/IlyaKats2005/Careloop) · [Architecture and blockchain explanation](docs/ARCHITECTURE.md) · [Exact run instructions](docs/RUNNING.md) · [Live demo guide](docs/LIVE-DEMO.md) · [Hackathon submission](docs/SUBMISSION.md)
 
 Careloop connects participants, study programs and clinics. Programs define their questionnaire, reporting schedule and AI review focus. The prototype includes medication follow-up and general wellbeing examples. It accepts **fictional data and disposable Preprod assets only**.
+
+The sponsor allocates separate budgets for AI analysis and participant rewards. Participants submit check-ins; the clinic reviews exceptions and clinical concerns. For a valid completed report, the participant proves eligibility without putting the report on the blockchain, and a smart contract releases the reward directly to their saved wallet. This reduces the clinic's role in administering payments while keeping it responsible for report review.
+
+## Open the current demo
+
+**Live link: https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/**
+
+Use **Try participant demo**, **Try clinic demo**, or **Try sponsor demo**. In the demo, **View as** switches roles. **Demo tools → Choose participant** offers Alex, Maya and Noah already enrolled, and Sam registered with a wallet but awaiting enrollment. Wallet addresses are saved in their profiles; they do not need to enter an address for each report.
+
+The website, database and ordinary Gemini analysis are hosted. **Participant payments still require the sponsor relay to run on the operator's computer.** On Ilya's already configured Mac, run this only if the relay is not already running:
+
+```sh
+cd "$HOME/.codex/.chatgpt-projects/g-p-6ac89d8629088191afb47e3bffebeb7f/sites/careloop"
+node --use-env-proxy --env-file=.local/sponsor-relay.env scripts/sponsor-relay.mjs
+```
+
+Leave that process running and the computer awake and connected. In the participant browser, keep **My rewards**, **My reports**, or the submitted report open so its private proof can be generated. The preconfigured `.local/sponsor-relay.env` is private and is not included in a GitHub clone. A fresh installation needs the configuration below and in [the run guide](docs/RUNNING.md).
+
+**You do not need PostgreSQL, the Masumi Payment Service or the Masumi agent for the normal website → participant reward flow.** Those services are only needed to demonstrate the separate paid AI job. Cloud worker deployment files are included, but an always-on cloud relay has not been provisioned.
 
 ## The real workflow
 
@@ -17,13 +36,20 @@ Careloop connects participants, study programs and clinics. Programs define thei
 
 Clinical review is separate from reward eligibility. Concerning symptoms may require clinical follow-up without automatically removing a completion reward. AI cannot diagnose, determine that a participant is safe, or notify a doctor in this demo.
 
-This workflow requires the sponsor relay to be online and funded. Network confirmation is asynchronous; “submitted” does not mean “paid.” See [the live walkthrough](docs/LIVE-DEMO.md) for the presentation sequence and recovery behavior. The guided Blockchain lab animation remains an educational illustration and is not payment evidence.
+This workflow requires the sponsor relay to be online and funded. Network confirmation is asynchronous; “submitted” does not mean “paid.” See [the live walkthrough](docs/LIVE-DEMO.md) for the presentation sequence and recovery behavior. **Demo tools → Payment walkthrough** is an educational illustration; a report's live payment view and matching confirmed transaction provide payment evidence.
 
-## Why blockchain
+## Why blockchain is useful here
 
-The sponsor commits the reward budget to a contract. A valid proof authorizes a scoped claim without publishing the questionnaire or enrollment secret. The contract checks the approved root, program, period, payout key, fixed reward and unused nullifier, then preserves the remaining pool state. Replaying that same claim cannot withdraw again from its pool.
+- **Shared payment evidence.** A sponsor, participant or clinic can independently inspect actual contract funding, remaining funds and payouts on Cardano. They do not have to accept a clinic's database entry as proof that money was paid.
+- **Rules enforced at settlement.** The contract checks the approved root, program, period, recipient payment key, reward amount and unused nullifier. A matching proof releases 2 test ADA and preserves the remaining pool state. Replaying the same claim cannot withdraw again from that pool.
+- **Less payment administration for the clinic.** The sponsor funds the contract and covers transaction fees. An ordinary qualifying report can be paid automatically to the participant's saved wallet; the clinic resolves exceptions rather than manually sending every reward.
+- **Eligibility verification without public questionnaires.** The browser proves membership in an approved batch without revealing its enrollment secret or Merkle path. The chain verifies the proof without receiving the medical answers.
 
-The shared ledger records the payout and consumed claim independently of the application's database. It does not prove that a questionnaire is truthful, that a person is globally unique, or that the AI is clinically correct. The database still holds reports and account records. Authorization policy is an off-chain trust boundary.
+The settlement record is decentralized; **the whole application is not serverless**. Accounts, reports, AI calls, approval policy and the payment queue still use a hosted backend. The current sponsor relay is another availability dependency.
+
+Likewise, **ZK does not currently mean “only the clinic knows your data.”** The backend stores reports and the external AI provider receives their answers. The freely switchable demo roles do not provide production isolation between sponsor and clinic. ZK protects the private proof inputs from the public chain; it does not encrypt the report database.
+
+The broader product goal is for participants to see a clinic's sponsor allocation without the sponsor seeing clinical answers. Today, sponsor and clinic panels share the app's budget ledger; participants see their own rewards and can inspect actual on-chain funding. There is no participant-facing clinic-wide allocation panel yet. App credit allocations are off-chain and are not independently proven by Cardano. [Read the precise architecture and privacy boundaries](docs/ARCHITECTURE.md).
 
 ## Two payment purposes, one network
 
@@ -50,7 +76,7 @@ Edit the private `.env`: set `GEMINI_API_KEY`, keep `AI_PROVIDER=gemini` and `AI
 
 ```sh
 npm run build
-node --env-file=.env scripts/dev.mjs
+node --use-env-proxy --env-file=.env scripts/dev.mjs
 ```
 
 Open the printed URL, normally http://localhost:8787. Use `CARELOOP_PORT=8789` to select another port. Node's SQLite backs local accounts, reports and programs at ignored `.local/dev-data.sqlite`; restarting the server preserves them. Hosted deployments use Cloudflare D1 with schema migrations under `drizzle/`.
@@ -61,7 +87,7 @@ Create a clinic account and copy a program's invitation code. Create a participa
 
 Open **Sponsor** to reserve or release the clinic's AI and client reward budgets. Each new demo starts with 1,000 app credits: 750 unallocated, 200 for rewards and 50 for AI. Clinic balances and funding activity update automatically. **Refresh** updates the current reports and balances without resetting the run. A browser reload resumes the same workspace, participant, program and saved report. Only **Demo tools → Restart demo**, after confirmation, restores the starting balances and the three-enrolled/one-unenrolled cohort. Navigation is stored for this tab; questionnaire drafts remain in memory only. These app credits are separate from real test ADA, model-provider billing and the live payment allowance, which are not reset.
 
-Open **Demo readiness** in the app to check the sponsor heartbeat and remaining budget. Check-in now includes enrollment creation and private recovery controls before submission. The screen labels the separate Masumi service and prior receipts explicitly.
+Open **Demo tools → Check payment service → Check service** to check the sponsor heartbeat and remaining payment allowance. Check-in includes enrollment creation and private recovery controls before submission. **My rewards** and **My reports** update automatically and can generate the participant's pending proof while open. Historical receipts are labeled separately from the current report's payment.
 
 - [Always-on worker deployment](deploy/README.md): Docker Compose package with persistent journal, restart policy and heartbeat health check. Requires a separately provisioned host.
 - [Live rehearsal and ≤2.5-minute recording guide](docs/DEMO-REHEARSAL.md): both real outcomes and narration.
@@ -84,6 +110,8 @@ SPONSOR_MAX_SPEND_ADA=100
 
 Set the same strong relay token in the hosted server environment and the relay's private `.env`. Keep it out of client JavaScript. Obtain free test ADA from the [Cardano Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/). The default four-job budget needs approximately 100 test ADA, with extra liquidity/collateral useful for the wallet. The relay uses public Koios if no Blockfrost key file is configured.
 
+The existing operator setup was raised to **10 jobs / 250 test ADA**. A fresh clone's example deliberately starts at **4 jobs / 100 test ADA**. Both the server allowance and relay limits apply; restarting the demo does not reset either. For a completely local app, set `SPONSOR_SITE_URL=http://localhost:8787` so the relay polls the local server rather than the hosted demo.
+
 ```sh
 # Read-only readiness check: does not submit transactions.
 node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs --check
@@ -103,6 +131,7 @@ Each approved report currently gets a separate experimental pool. A pool starts 
 - Enrollment secrets and recovery files stay in the participant browser. Download a recovery file before switching devices or closing a tab with reward state. Signing in elsewhere does not recover that secret.
 - The public chain receives proof/public inputs and transaction information, not the questionnaire or enrollment secret. Addresses, amounts, timing, program/period and nullifiers are public and may be linkable.
 - The hosting operator can link accounts to stored reports. This email-account prototype does **not** guarantee that only a clinic can identify a participant.
+- The demo's Sponsor view is a simulation within the same workspace, not a separate confidentiality boundary. Its workspace API can return report records even though the sponsor screen displays budgets. Do not use it for real clinical data.
 - Fictional answers are sent to an external model provider. Do not enter real medical information.
 
 ## Verification and existing evidence
@@ -112,7 +141,9 @@ Each approved report currently gets a separate experimental pool. A pool starts 
 - **Masumi service payment:** seller received 1 test USDM. [Confirmed withdrawal](https://preprod.cardanoscan.io/transaction/e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1).
 - **Earlier patient reward:** real Groth16 proof, 2 test ADA paid, pool changed from 20 to 18 ADA and recorded its nullifier. [Funding](https://preprod.cardanoscan.io/transaction/f7b17e0f0f34ad3f8406c9f22e21e90c9c5d0c1fc33468ae32217013f88dbc13) · [Claim](https://preprod.cardanoscan.io/transaction/3cdc05fd37d24ce89529db27057ffdcd44b9eef40269888cc3ebf1faf6fa0b10).
 
-Those historical receipts came from dedicated test wallets. They are **not** proof that a newly submitted website report has been paid. Use that report's fresh confirmed transaction for the live demonstration. New automatic-relay verification must be recorded separately after it completes.
+An automatic website run is also recorded in [live-form-payment.json](docs/live-form-payment.json): [funding](https://preprod.cardanoscan.io/transaction/3ab289b65292f64d19211436b9c417c725d332431dad72c9bd1ff5a67f6e3bb1) and [2-test-ADA claim](https://preprod.cardanoscan.io/transaction/822634daddc045a367669ebba5d6c07af7d3ec071c984cabb1c26c27e479f2e5).
+
+Those historical receipts came from dedicated test wallets. They are **not** proof that a newly submitted website report has been paid. Use that report's fresh confirmed transaction for the live demonstration.
 
 ```sh
 npm test
