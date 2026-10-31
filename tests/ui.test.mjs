@@ -63,12 +63,12 @@ function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
  return {state,requests,hooks,fetch};
 }
 
-async function workspace({backend=service(),session={signedIn:false,user:null},storage=new Map()}={}){
+async function workspace({backend=service(),session={signedIn:false,user:null},storage=new Map(),browserReload=false}={}){
  const elements=new Map(),storageWrites=[],blockchainCalls=[],cloudRewards=[],ownerChanges=[],proofCalls=[];
  const document={querySelector(selector){if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',style:{},value:'',checked:false,focus(){}});return elements.get(selector)}};
  const window={careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
  const sessionStorage={get length(){return storage.size},key:index=>[...storage.keys()][index]??null,getItem:key=>storage.get(key)??null,setItem(key,value){storageWrites.push({key,value});storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
- const context=vm.createContext({document,window,sessionStorage,crypto:{randomUUID},URLSearchParams,location:{search:''},setTimeout:()=>0,clearTimeout:()=>{},fetch:(url,options)=>backend.fetch(url,options,session)});
+ const context=vm.createContext({document,window,sessionStorage,crypto:{randomUUID},performance:{getEntriesByType:()=>[{type:browserReload?'reload':'navigate'}]},URLSearchParams,location:{search:''},setTimeout:()=>0,clearTimeout:()=>{},fetch:(url,options)=>backend.fetch(url,options,session)});
  const source=readFileSync('public/app.js','utf8');assert.match(source,/render\(\);initialize\(\);\s*$/);
  vm.runInContext(source.replace(/render\(\);initialize\(\);\s*$/,'render();globalThis.__ready=initialize();'),context);await context.__ready;
  const run=code=>vm.runInContext(code,context),data=code=>JSON.parse(run('JSON.stringify('+code+')')),element=selector=>document.querySelector(selector);
@@ -267,6 +267,14 @@ test('four-client UI supports enrolling Sam and restarting against the real work
  assert.equal(await DB.prepare('SELECT count(*) AS n FROM care_reports').first('n'),1);
  assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
  const fresh=await workspace({backend,storage:ui.storage});await fresh.run("enterWorkspace('patient')");assert.equal(fresh.data('cloudWorkspace.id'),ui.data('cloudWorkspace.id'));assert.equal(fresh.data('demoClientId'),'alex');
+ await fresh.run("switchRole('sponsor')");assert.match(fresh.html(),/Fund the next check-in/);assert.equal(fresh.data('funding.available'),750);
+ fresh.run("fundingForm={bucket:'rewards',amount:25}");await fresh.run("allocateCredits('reserve')");assert.equal(fresh.data('funding.available'),725);assert.equal(fresh.data('funding.clinic.rewards'),225);
+ await fresh.run("switchRole('clinic')");assert.match(fresh.html(),/Ready to fund care/);assert.equal(fresh.data('funding.clinic.rewards'),225);
+ const sponsorTab=await workspace({backend});await sponsorTab.run("enterWorkspace('sponsor')");sponsorTab.run("fundingForm={bucket:'ai',amount:20}");await sponsorTab.run("allocateCredits('reserve')");
+ await fresh.run('loadFunding()');assert.equal(fresh.data('funding.clinic.ai'),70);assert.equal(fresh.data('funding.available'),705);
+ const beforeRefresh=fresh.data('cloudWorkspace.id');await fresh.run('refreshDemoOrWorkspace()');assert.notEqual(fresh.data('cloudWorkspace.id'),beforeRefresh);assert.equal(fresh.data('funding.available'),750);assert.equal(fresh.data('funding.clinic.rewards'),200);
+ const reloaded=await workspace({backend,storage:fresh.storage,browserReload:true});await reloaded.run("enterWorkspace('clinic')");assert.notEqual(reloaded.data('cloudWorkspace.id'),fresh.data('cloudWorkspace.id'));assert.equal(reloaded.data('funding.available'),750);assert.equal(reloaded.data('reports.length'),0);
+ assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,3);
 });
 
 test('an automatically approved report hides clinic approval controls and explains the sponsor limit',async()=>{

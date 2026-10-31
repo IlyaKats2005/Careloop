@@ -118,3 +118,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   #toast{width:calc(100% - 32px);text-align:center;bottom:16px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+.clinic-funding{margin-bottom:24px;border-top:4px solid #2b6555}
+.funding-layout{display:grid;grid-template-columns:1.25fr 1fr;gap:24px;align-items:start}
+.funding-metrics{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0;padding:20px 0;border-top:1px solid #dce3d8;border-bottom:1px solid #dce3d8}
+.funding-metrics strong{display:block;font-size:34px;color:#1b4038;line-height:1.3}
+.funding-metrics span,.funding-metrics small{display:block;margin-top:5px}
+.funding-explainer p{margin:18px 0}.funding-activity{margin-top:24px}
+.funding-overview .stat:first-child{background:#285f50;color:#fff}.funding-overview .stat:first-child .eyebrow,.funding-overview .stat:first-child small{color:#dce9ce}
+@media(max-width:1000px){.funding-layout{grid-template-columns:1fr}.user-actions{flex-wrap:wrap}}
+@media(max-width:550px){.funding-metrics{grid-template-columns:1fr;gap:16px}.clinic-funding .row{align-items:flex-start;gap:12px;flex-wrap:wrap}}

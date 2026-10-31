@@ -7,7 +7,7 @@ import {commitment,leaf,hash,field} from '../src/zk-core.js';
 import {bech32} from '@scure/base';
 import {DEMO_CLIENTS} from '../src/demo-clients.js';
 let ip=0;
-function database(){const sqlite=new DatabaseSync(':memory:');for(const name of ['0000_email_auth','0001_workspace_data','0002_automatic_rewards','0003_client_profiles'])sqlite.exec(readFileSync(new URL('../drizzle/'+name+'.sql',import.meta.url),'utf8'));return{sqlite,prepare(sql){const statement=sqlite.prepare(sql);return{bind(...args){return{async first(){return statement.get(...args)||null;},async all(){return{results:statement.all(...args)};},async run(){const result=statement.run(...args);return{meta:{changes:Number(result.changes)}};}};}};}};}
+function database(){const sqlite=new DatabaseSync(':memory:');for(const name of ['0000_email_auth','0001_workspace_data','0002_automatic_rewards','0003_client_profiles','0004_demo_funding'])sqlite.exec(readFileSync(new URL('../drizzle/'+name+'.sql',import.meta.url),'utf8'));return{sqlite,prepare(sql){const statement=sqlite.prepare(sql);return{bind(...args){return{async first(){return statement.get(...args)||null;},async all(){return{results:statement.all(...args)};},async run(){const result=statement.run(...args);return{meta:{changes:Number(result.changes)}};}};}};}};}
 const sha=async text=>Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))).toString('hex');
 async function user(DB,role){const id=crypto.randomUUID(),token=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');DB.sqlite.prepare('INSERT INTO auth_users (id,email,display_name,role,password_hash,password_salt,password_iterations,created_at,recipient_address) VALUES (?,?,?,?,?,?,?,?,?)').run(id,id+'@example.test',role,role,'hash','salt',100000,1,role==='patient'?recipientAddress:null);DB.sqlite.prepare('INSERT INTO auth_sessions VALUES (?,?,?,?)').run(await sha(token),id,1,Math.floor(Date.now()/1000)+3600);return{cookie:'__Host-careloop_session='+token,id};}
 async function call(DB,path,{cookie='',method='GET',body,services={},env={}}={}){const request=new Request('https://careloop.test'+path,{method,headers:{cookie,'Content-Type':'application/json',Origin:'https://careloop.test','cf-connecting-ip':'data-test-'+(++ip)},...(body===undefined?{}:{body:JSON.stringify(body)})});const response=await dataAPI(request,{DB,...env},services);return{status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
@@ -199,5 +199,29 @@ test('restart creates a fresh three-plus-one cohort without deleting old reports
  assert.equal((await call(DB,`/api/data/reports/${id}/status?mode=demo`,{cookie:restart.cookie})).status,404);
  assert.equal((await call(DB,`/api/data/reports/${id}/status?mode=demo`,{cookie})).body.report.payout.id,prior.id);
  const resume=await call(DB,'/api/demo/start',{cookie:restart.cookie,method:'POST',body:{}});assert.equal(resume.body.workspace.id,restart.body.workspace.id);
+ DB.sqlite.close();
+});
+
+test('demo sponsor allocations govern AI and client budgets and reset into an isolated ledger',async()=>{
+ const DB=database(),start=await call(DB,'/api/demo/start?view=sponsor',{method:'POST',body:{}}),cookie=start.cookie;
+ const endpoint='/api/data/funding?mode=demo&view=sponsor';
+ const allocate=(amount,bucket,action='reserve')=>call(DB,endpoint,{cookie,method:'POST',body:{clinicId:'careloop-clinic',amount,bucket,action}});
+ assert.equal(start.body.funding.available,750);
+ assert.equal((await call(DB,'/api/data/funding?mode=demo&view=clinic',{cookie,method:'POST',body:{}})).status,403);
+ assert.equal((await call(DB,'/api/data/funding?mode=demo&view=patient',{cookie})).status,403);
+ assert.equal((await allocate(50,'ai','release')).status,200);
+ const patient=(await call(DB,'/api/workspace?mode=demo',{cookie})).body,program=patient.programs[0];
+ const saved=await call(DB,'/api/data/reports?mode=demo',{cookie,method:'POST',body:reportFor(program)}),id=saved.body.report.id;
+ let calls=0;const analyzeOptions={cookie,method:'POST',body:{},env:relayEnv,services:{analyze:async()=>{calls++;return {status:200,body:cleanAI};}}};
+ const path=`/api/data/reports/${id}/analyze?mode=demo`;
+ assert.equal((await call(DB,path,analyzeOptions)).body.error,'CLINIC_BUDGET');assert.equal(calls,0);
+ await allocate(1,'ai');await allocate(200,'rewards','release');
+ const analyzed=await call(DB,path,analyzeOptions);assert.equal(analyzed.status,200);assert.equal(calls,1);assert.equal(analyzed.body.report.rewardDecision.state,'approved');assert.equal(analyzed.body.report.payout.blockedReason,'clinic_budget');
+ const blocked=(await call(DB,endpoint,{cookie})).body.funding;assert.equal(blocked.clinic.aiSpent,1);assert.equal(blocked.clinic.ai,0);
+ await allocate(2,'rewards');const resumed=await call(DB,path,analyzeOptions);assert.equal(calls,1);assert.equal(resumed.body.report.payout.state,'queued');
+ const before=(await call(DB,endpoint,{cookie})).body.funding;assert.equal(before.clinic.rewardPending,2);assert.equal(before.clinic.rewardSpent,0);
+ const reset=await call(DB,'/api/demo/restart?view=sponsor',{cookie,method:'POST',body:{}});assert.equal(reset.body.funding.available,750);assert.equal(reset.body.funding.clinic.ai,50);assert.equal(reset.body.funding.clinic.rewards,200);assert.equal(reset.body.funding.clinic.aiSpent,0);assert.equal(reset.body.reports.length,0);
+ assert.deepEqual((await call(DB,endpoint,{cookie})).body.funding,before);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) AS n FROM care_payment_jobs').get().n,1);
  DB.sqlite.close();
 });

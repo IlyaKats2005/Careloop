@@ -12,7 +12,11 @@ Enter the participant or clinic demo and open **Demo clients**. Alex Morgan, May
 
 Open Sam, choose **Use invitation**, then **Join program** to demonstrate enrollment. Switch to another client to show their separate reports and enrollment state. The clinic workspace shows the whole cohort.
 
-**Restart demo** starts a new private workspace with the original three enrolled clients, Sam awaiting enrollment and no reports. It preserves previous server records, blockchain transactions and private enrollment recovery state. It does not replenish the sponsor wallet or reset the payment allowance.
+In demo mode, **Refresh** and **Restart demo** start a new private workspace with the original three enrolled clients, Sam awaiting enrollment and no reports. A browser reload also starts a fresh run when you enter the demo again. Account workspaces continue to refresh their saved records normally.
+
+Every new demo has **1,000 app credits**: 750 available to the sponsor, 200 reserved for client rewards, and 50 reserved for AI. Open **Sponsor** to block additional credits for Careloop Research Clinic or release unused allocations. The clinic dashboard shows the same budget, updating every four seconds. One credit is charged for a successful AI analysis; failures return the reserved credit. Two credits are reserved for an approved client reward and become spent only on a verified Preprod payment.
+
+These are resettable **app accounting credits**, not a wallet balance or a model provider invoice. Allocating credits does not create an on-chain deposit. The real Cardano funding and claim still use the separate live sponsor. Restart preserves old server records, blockchain transactions and private enrollment recovery state. It does not replenish real wallets or reset the live payment allowance.
 
 The website and database are hosted. ZK proofs run in each participant's browser. Until the separate hosting migration is completed, the sponsor payment worker and Masumi service run locally.
 

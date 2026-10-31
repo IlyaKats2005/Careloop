@@ -2,6 +2,7 @@ import {bech32} from '@scure/base';
 import {field,hash} from './zk-core.js';
 import {publicRewardDeployment} from './reward-status.js';
 import {rewardDecision} from './reward-policy.js';
+import {reserveDemoCharge,settleDemoCharge} from './demo-funding.js';
 
 const now=()=>Math.floor(Date.now()/1000);
 const fail=(message,status=400,code='PAYMENT_INPUT')=>Object.assign(new Error(message),{status,code});
@@ -39,6 +40,7 @@ export function payoutJSON(row){
 export async function enqueuePayment(DB,env,report){
  const existing=await first(DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',report.id);if(existing)return existing;
  if(!enabled(env)||!report.approval_json||!report.recipient_address)return null;
+ await reserveDemoCharge(DB,report,'rewards');
  const recipient=normalizeRecipient(report.recipient_address),limit=maxJobs(env);
  await run(DB,"INSERT OR IGNORE INTO care_payment_jobs (id,report_id,state,recipient_address,approval_json,error,created_at,updated_at) SELECT ?,?,'queued',?,?, '',?,? WHERE (SELECT count(*) FROM care_payment_jobs)<?",crypto.randomUUID(),report.id,recipient.address,report.approval_json,now(),now(),limit);
  const job=await first(DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',report.id);
@@ -57,7 +59,7 @@ async function resumeBudgetBlockedPayments(DB,env){
   try{
    const job=await enqueuePayment(DB,env,report);
    if(job){await run(DB,"UPDATE care_reports SET payout_error='',updated_at=? WHERE id=?",now(),report.id);resumed++;}
-  }catch(error){if(error.code==='SPONSOR_BUDGET')break;throw error;}
+  }catch(error){if(error.code==='SPONSOR_BUDGET')break;if(error.code==='CLINIC_BUDGET')continue;throw error;}
  }
  return resumed;
 }
@@ -138,6 +140,7 @@ export async function sponsorAPI(request,env={}){
   if(typeof body.leaseToken!=='string'||body.leaseToken!==job.lease_token)throw fail('Payment job lease is unavailable. Lease it again before proceeding.',409,'LEASE_CONFLICT');
   if(body.state===job.state&&['awaiting_proof','confirmed','failed'].includes(job.state)){
    if(job.state!=='failed')confirmedReceipt(body,job,job.state==='confirmed'?'claim':'fund');
+   if(job.state==='confirmed')await settleDemoCharge(DB,await first(DB,'SELECT * FROM care_reports WHERE id=?',job.report_id),'rewards');
    return json({job:relayJob(job),leaseToken:null,leaseExpiresAt:null});
   }
   if(job.lease_expires_at<=now())throw fail('Payment job lease is unavailable. Lease it again before proceeding.',409,'LEASE_CONFLICT');
@@ -161,6 +164,7 @@ export async function sponsorAPI(request,env={}){
   const terminal=['awaiting_proof','confirmed','failed'].includes(body.state),error=body.state==='failed'?publicError:'';
   const result=await run(DB,'UPDATE care_payment_jobs SET state=?,fund_tx_hash=?,claim_tx_hash=?,dep_json=?,receipt_json=?,error=?,lease_expires_at=?,updated_at=? WHERE id=? AND lease_token=? AND lease_expires_at>? AND state=?',body.state,fund||null,claim||null,dep||null,receipt||null,error,terminal?null:now()+LEASE_SECONDS,now(),job.id,body.leaseToken,now(),job.state);
   if(!changes(result))throw fail('Payment changed concurrently. Reload the leased job.',409,'LEASE_CONFLICT');
+  if(body.state==='confirmed')await settleDemoCharge(DB,await first(DB,'SELECT * FROM care_reports WHERE id=?',job.report_id),'rewards');
   const kind=body.state==='funding'||body.state==='awaiting_proof'?'fund':body.state==='submitted'||body.state==='confirmed'?'claim':null;
   if(kind){const value={txHash:kind==='fund'?fund:claim,dep:parse(dep),verified:body.state==='awaiting_proof'||body.state==='confirmed',verification:'sponsor-relay',...(body.state==='confirmed'?{nullifier:parse(receipt).nullifier}:{})};await run(DB,"UPDATE care_reports SET chain_json=json_set(chain_json,?,json(?)),updated_at=? WHERE id=?",'$.'+kind,JSON.stringify(value),now(),job.report_id);}
   job=await first(DB,'SELECT * FROM care_payment_jobs WHERE id=?',job.id);
