@@ -6,6 +6,8 @@
 
 Careloop connects participants, study programs and clinics. Programs define their questionnaire, reporting schedule and AI review focus. The prototype includes medication follow-up and general wellbeing examples. It accepts **fictional data and disposable Preprod assets only**.
 
+**For judges:** [copy-ready Devfolio description and all submission links](docs/DEVFOLIO.md) · [requirements checklist](docs/SUBMISSION.md#requirement-checklist) · [paid AI job input, result and verified receipt](docs/evidence/README.md).
+
 The sponsor allocates separate budgets for AI analysis and participant rewards. Participants submit check-ins; the clinic reviews exceptions and clinical concerns. For a valid completed report, the participant proves eligibility without putting the report on the blockchain, and a smart contract releases the reward directly to their saved wallet. This reduces the clinic's role in administering payments while keeping it responsible for report review.
 
 ## Open the current demo

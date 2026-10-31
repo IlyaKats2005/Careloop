@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "network": "Preprod",
+  "networkMagic": 1,
+  "integration": "Masumi Standard API paid job (not a Sokosumi Coworker Task)",
+  "fictionalDataOnly": true,
+  "jobId": "1224781e-666a-42f4-b01e-0b5ebfe24373",
+  "status": "completed",
+  "inputData": {
+    "prompt": "CARELOOP_REPORT_JSON\n{\"fictional\":true,\"answers\":{\"medication\":\"semaglutide\",\"status\":\"Taking as prescribed\",\"dose\":\"Unchanged; exact dose not supplied\",\"symptoms\":{\"nausea\":\"None\"},\"hydration\":\"Yes\",\"notes\":\"Fictional paid Masumi demo. No new concerns.\"}}"
+  },
+  "identifierFromPurchaser": "67da16f3df84fc833549",
+  "inputHash": "a3f82c543445b26542ff454b829b01f1d70ba6485e67f20b5fbd68837ce65c26",
+  "resultText": "{\n  \"summary\": \"The participant is taking semaglutide as prescribed, with no reported changes in dose or new concerns. No nausea or other symptoms were reported, and hydration is adequate.\",\n  \"review_priority\": \"routine\",\n  \"findings\": [\n    {\n      \"source_question\": \"medication\",\n      \"quote\": \"semaglutide\",\n      \"observation\": \"Participant is taking semaglutide.\"\n    },\n    {\n      \"source_question\": \"status\",\n      \"quote\": \"Taking as prescribed\",\n      \"observation\": \"Participant reports taking medication as prescribed.\"\n    },\n    {\n      \"source_question\": \"dose\",\n      \"quote\": \"Unchanged; exact dose not supplied\",\n      \"observation\": \"Dose is reported as unchanged, but the exact dose was not provided.\"\n    },\n    {\n      \"source_question\": \"symptoms\",\n      \"quote\": \"None\",\n      \"observation\": \"No nausea was reported.\"\n    },\n    {\n      \"source_question\": \"hydration\",\n      \"quote\": \"Yes\",\n      \"observation\": \"Participant reports adequate hydration.\"\n    },\n    {\n      \"source_question\": \"notes\",\n      \"quote\": \"No new concerns.\",\n      \"observation\": \"Participant reports no new concerns.\"\n    }\n  ],\n  \"missing_information\": [],\n  \"possible_contradictions\": [],\n  \"model\": \"gemini-2.5-flash\",\n  \"provider\": \"Gemini\",\n  \"clinical_validation\": false,\n  \"approval\": false,\n  \"created_at\": \"2026-10-30T17:25:29.685Z\"\n}",
+  "resultHash": "d239420ea7df3cbe3a6978426955a6a643e5b1f0278b98bb51310841a583ac66",
+  "settlement": {
+    "transactionHash": "e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1",
+    "explorerUrl": "https://preprod.cardanoscan.io/transaction/e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1",
+    "sellerAddress": "addr_test1qpqfr4fga9a7xhmrr2zy9r658wwn0r664fzrz2xyzpjmjyhw27xx85lqgz4yz7y6px4yur62d2wzqrmnnzznvnu2mx6q54vwdj",
+    "assetUnit": "16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d",
+    "netSellerAtomicUnits": "1000000",
+    "amount": "1 test USDM",
+    "blockHeight": 5354081,
+    "blockTime": "2026-10-30T18:09:24.000Z",
+    "validContract": true,
+    "verifiedAt": "2026-10-31T09:26:27.258Z",
+    "verification": "Saved job input/result hashes matched its Masumi payment record. Blockfrost confirmed the withdrawal transaction and seller output-minus-input balance of exactly 1,000,000 test-USDM atomic units."
+  },
+  "limits": [
+    "Historical completed Standard API job; not proof of another paid task or of each website form buying an AI job.",
+    "AI output is preserved exactly as generated and is not clinically validated.",
+    "Raw private runtime state, admin keys, wallet seeds and signing data are excluded."
+  ]
+}
