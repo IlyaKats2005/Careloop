@@ -99,12 +99,15 @@ async function bindCommitment(ctx,enrollment,value){
  const current=await first(ctx.DB,'SELECT commitment FROM care_enrollments WHERE id=?',enrollment.id);if(current.commitment!==commit)throw fail('Enrollment commitment changed. Reload and retry.',409);return commit;
 }
 async function approveReport(ctx,report,decision,source,env){
+ if(decision.state!=='approved')throw fail('Reward clarification is required before authorization.',409);
  const DB=ctx.DB;
  if(!report.approval_json){
   const commit=canonicalCommitment(report.commitment),c={...config,program:programFieldId(report.program_id),period:periodFieldId(report.period_id),domain:randomSecret()};
   const leaves=Array.from({length:8},()=>leaf(makeCommitment(randomSecret()),c));const index=crypto.getRandomValues(new Uint8Array(1))[0]%8;leaves[index]=leaf(commit,c);
   const approval={...tree(leaves,index),c,commitment:commit,reportId:report.id,programId:report.program_id,periodId:report.period_id,periodLabel:report.period_label};
   await run(DB,"UPDATE care_reports SET approval_json=?,payment='Approved',reward_decision_json=?,audit_json=json_insert(audit_json,'$[#]',?),updated_at=? WHERE id=? AND approval_json IS NULL",JSON.stringify(approval),JSON.stringify(decision),event(source==='clinic'?'Clinic approved reward eligibility.':'Automatic completion policy approved the reward. This is not a medical decision.'),now(),report.id);
+ }else if(source==='clinic'&&parse(report.reward_decision_json,{})?.source!=='clinic'){
+  await run(DB,"UPDATE care_reports SET payment='Approved',reward_decision_json=?,audit_json=json_insert(audit_json,'$[#]',?),updated_at=? WHERE id=?",JSON.stringify(decision),event('Clinic confirmed reward eligibility after reviewing the saved report.'),now(),report.id);
  }
  const fresh=await reportFor(ctx,report.id);try{await enqueuePayment(DB,env,fresh);await run(DB,"UPDATE care_reports SET payout_error='' WHERE id=?",report.id);}catch(error){if(error.code!=='SPONSOR_BUDGET')throw error;await run(DB,'UPDATE care_reports SET payout_error=? WHERE id=?',error.message,report.id);}return reportFor(ctx,report.id);
 }
@@ -187,7 +190,16 @@ export async function dataAPI(request,env={},services={}){
    return json({report:reportJSON(await reportFor(ctx,report.id))});
   }
   if(typeof services.analyze!=='function')throw fail('AI analysis is temporarily unavailable.',503);
-  if(report.ai_json){const decision=rewardDecision(parse(report.answers_json),parse(report.program_json),parse(report.ai_json));if(decision.state==='approved'||report.approval_json)return json({report:reportJSON(await approveReport(ctx,report,decision,'policy',env))});return json({report:reportJSON(report)});}
+  if(report.ai_json){
+   const previous=parse(report.reward_decision_json,{}),clinicApproved=report.approval_json&&previous.source==='clinic'&&previous.state==='approved';
+   const decision=clinicApproved?previous:rewardDecision(parse(report.answers_json),parse(report.program_json),parse(report.ai_json));
+   if(decision.state==='approved')return json({report:reportJSON(await approveReport(ctx,report,decision,clinicApproved?'clinic':'policy',env))});
+   // Recheck cached analysis before creating any payment. Issued approvals and
+   // existing transactions remain historical facts; this route cannot undo them.
+   const chain=parse(report.chain_json,{});
+   if(!report.payment_job&&!chain.fund&&!chain.claim)await run(DB,"UPDATE care_reports SET reward_decision_json=?,payment='On hold',updated_at=? WHERE id=?",JSON.stringify(decision),now(),report.id);
+   return json({report:reportJSON(await reportFor(ctx,report.id))});
+  }
   throttle('ai:'+ctx.key,6);
   const lock=await run(DB,"UPDATE care_reports SET ai_status='running',ai_started_at=?,ai_attempts=ai_attempts+1 WHERE id=? AND ai_attempts<5 AND (ai_status!='running' OR ai_started_at<?)",now(),report.id,now()-120);
   if(!changed(lock))throw fail(report.ai_attempts>=5?'Analysis retry limit reached for this report.':'Analysis is already running. Refresh the report shortly.',409,'ANALYSIS_BUSY');
@@ -196,7 +208,8 @@ export async function dataAPI(request,env={},services={}){
    const ai={...result.body,approval:false,clinical_validation:false},decision=rewardDecision(parse(report.answers_json),parse(report.program_json),ai);
    const clinical=decision.clinicalReview==='priority_review'?'Priority review':decision.clinicalReview==='review_requested'?'Review requested':'Routine';
    await run(DB,"UPDATE care_reports SET ai_json=?,ai_error='',ai_status='complete',clinical=CASE WHEN clinical IN ('Awaiting review','Routine','Review requested','Priority review') THEN ? ELSE clinical END,reward_decision_json=CASE WHEN approval_json IS NULL THEN ? ELSE reward_decision_json END,payment=CASE WHEN approval_json IS NULL AND ?='on_hold' THEN 'On hold' ELSE payment END,audit_json=json_insert(audit_json,'$[#]',?),updated_at=? WHERE id=?",JSON.stringify(ai),clinical,JSON.stringify(decision),decision.state,event(decision.state==='approved'?'AI analysis saved. Completion policy passed.':'AI analysis saved. Completion reward needs clarification.'),now(),report.id);
-   let fresh=await reportFor(ctx,report.id);if(decision.state==='approved'||fresh.approval_json)fresh=await approveReport(ctx,fresh,decision,'policy',env);
+   let fresh=await reportFor(ctx,report.id);const previous=parse(fresh.reward_decision_json,{}),clinicApproved=fresh.approval_json&&previous.source==='clinic'&&previous.state==='approved';
+   if(decision.state==='approved'||clinicApproved)fresh=await approveReport(ctx,fresh,clinicApproved?previous:decision,clinicApproved?'clinic':'policy',env);
    return json({report:reportJSON(fresh)});
   }
   const message=String(result.body?.message||result.body?.error||'AI analysis unavailable.').slice(0,1000),decision=rewardDecision(parse(report.answers_json),parse(report.program_json),null,{error:true});

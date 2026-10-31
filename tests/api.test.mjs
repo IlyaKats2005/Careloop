@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {validateInput,validateProgramInput,validateOutput,analyze,api} from '../src/api.js';
 import {getProgram} from '../src/programs.js';
 const answers={status:'Taking as prescribed',details:'Nausea for three days',symptoms:{Nausea:'Mild'},urgent:[]};
-const good={summary:'Nausea reported.',review_priority:'review_requested',findings:[{source_question:'details',quote:'Nausea',observation:'Symptom reported'}],missing_information:['dose'],possible_contradictions:[]};
+const good={summary:'Nausea reported.',review_priority:'review_requested',findings:[{source_question:'details',quote:'Nausea',observation:'Symptom reported'}],missing_information:['dose'],possible_contradictions:[],submission_validity:{status:'clear',issues:[]}};
 test('requires explicit fictional data and drops unknown identifiers',()=>{assert.throws(()=>validateInput({answers}));assert.deepEqual(validateInput({fictional:true,answers:{...answers,patient_name:'Alex'}}),answers);});
 test('rejects invented evidence, unknown priority and oversized input',()=>{assert.throws(()=>validateOutput({...good,findings:[{...good.findings[0],quote:'No symptoms'}]},answers));assert.throws(()=>validateOutput({...good,review_priority:'safe'},answers));assert.throws(()=>validateInput({fictional:true,answers:{...answers,notes:'x'.repeat(13000)}}));});
 test('missing API key never invents a model output',async()=>{const r=await analyze(answers,{},()=>assert.fail('must not call provider'));assert.equal(r.status,503);});
@@ -62,4 +62,13 @@ test('analysis route validates custom programs before calling a provider',async(
  const program={...getProgram('WELL-01'),ai:{...getProgram('WELL-01').ai,model:'arbitrary-paid-model'}};
  const response=await api(new Request('https://careloop.test/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fictional:true,program,answers})}));
  assert.equal(response.status,400);
+});
+
+test('validity findings require exact answer evidence and cannot silently disappear from model output',()=>{
+ const issue={kind:'incoherent',source_question:'details',quote:'Nausea',reason:'Fixture clarification.'};
+ const checked=validateOutput({...good,submission_validity:{status:'needs_clarification',issues:[issue]}},answers);
+ assert.deepEqual(checked.submission_validity.issues,[issue]);
+ for(const submission_validity of [undefined,{status:'clear',issues:[issue]},{status:'needs_clarification',issues:[]},{status:'needs_clarification',issues:[{...issue,quote:'invented answer'}]},{status:'needs_clarification',issues:[{...issue,source_question:'program'}]}]){
+  assert.throws(()=>validateOutput({...good,submission_validity},answers));
+ }
 });

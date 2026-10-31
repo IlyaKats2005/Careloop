@@ -6,7 +6,7 @@ import {randomUUID} from 'node:crypto';
 import * as programsModule from '../src/programs.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
-const goodAnalysis={summary:'No new concern in the fictional check-in.',review_priority:'routine',findings:[],missing_information:[],possible_contradictions:[],model:'gemini-2.5-flash',clinical_validation:false,approval:false};
+const goodAnalysis={summary:'No new concern in the fictional check-in.',review_priority:'routine',findings:[],missing_information:[],possible_contradictions:[],submission_validity:{status:'clear',issues:[]},model:'gemini-2.5-flash',clinical_validation:false,approval:false};
 const pending=()=>{let resolve;const promise=new Promise(r=>{resolve=r});return {promise,resolve};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -64,7 +64,7 @@ function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
 async function workspace({backend=service(),session={signedIn:false,user:null},storage=new Map()}={}){
  const elements=new Map(),storageWrites=[],blockchainCalls=[],cloudRewards=[],ownerChanges=[],proofCalls=[];
  const document={querySelector(selector){if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',style:{},value:'',checked:false,focus(){}});return elements.get(selector)}};
- const window={careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
+ const window={careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
  const sessionStorage={get length(){return storage.size},key:index=>[...storage.keys()][index]??null,getItem:key=>storage.get(key)??null,setItem(key,value){storageWrites.push({key,value});storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
  const context=vm.createContext({document,window,sessionStorage,crypto:{randomUUID},URLSearchParams,location:{search:''},setTimeout:()=>0,clearTimeout:()=>{},fetch:(url,options)=>backend.fetch(url,options,session)});
  const source=readFileSync('public/app.js','utf8');assert.match(source,/render\(\);initialize\(\);\s*$/);
@@ -133,7 +133,7 @@ test('AI errors retain the server report and support a retry while review and re
  ui.run(`switchRole('clinic');openReport(${JSON.stringify(id)})`);ui.element('#eligible').checked=false;await ui.run("clinicAction('approve')");assert.equal(backend.requests.filter(r=>r.path.endsWith('/review')).length,0);
  ui.element('#decision').value='Fictional report reviewed.';await ui.run("clinicAction('review')");assert.equal(ui.data('reports[0].clinical'),'Reviewed');assert.equal(ui.data('reports[0].payment'),'Pending');
  ui.element('#eligible').checked=true;await ui.run("clinicAction('approve')");assert.equal(ui.data('reports[0].payment'),'Approved');assert.equal(ui.data('rewardState(reports[0]).state'),'approved');
- await ui.run(`openRewards(${JSON.stringify(id)})`);assert.equal(ui.cloudRewards.length,1);assert.equal(ui.cloudRewards[0].report.id,id);assert.equal(ui.cloudRewards[0].options.canFund,true);
+ await ui.run(`openRewards(${JSON.stringify(id)})`);assert.equal(ui.data('page'),'rewards');assert.equal(ui.cloudRewards.length,0);assert.doesNotMatch(ui.html(),/Real wallet workspace|manual wallet tools|Private enrollment recovery/);
 });
 
 test('examples stay read-only, blockchain navigation receives safe state, and wallet metadata is never treated as paid',async()=>{
@@ -217,4 +217,19 @@ test('an already-online sponsor status is refreshed when the report is pending',
  backend.hooks.request=call=>call.path==='/api/sponsor/status'?Response.json({configured:true,online:false,lastSeen:'2026-10-30T19:24:00Z',remainingBudget:3}):undefined;
  await ui.run('pollPayout(payoutWatch)');
  assert.equal(ui.data('sponsorStatus.online'),false);assert.match(ui.html(),/sponsor service is offline/);assert.equal(ui.proofCalls.length,0);
+});
+
+
+test('normal rewards expose recovery and proof explanation without the manual funding workflow',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('rewards')");
+ assert.match(ui.html(),/Private enrollment recovery/);assert.match(ui.html(),/Restore recovery file/);assert.match(ui.html(),/When is the ZK proof used/);
+ assert.match(ui.html(),/same transaction/);assert.doesNotMatch(ui.html(),/Real wallet workspace|Prepare 20 ADA|manual wallet tools/);
+ ui.run("switchRole('clinic');nav('rewards')");assert.doesNotMatch(ui.html(),/Real wallet workspace|Restore recovery file/);
+});
+
+test('symptom priority is explained separately from answer validity and reward authorization',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
+ ui.run(`reports[0].clinical='Priority review';reports[0].ai.review_priority='priority_review';reports[0].ai.submission_validity={status:'needs_clarification',issues:[{source_question:'details',quote:'I died',reason:'Clarify the meaning.'}]};openReport(reports[0].id)`);
+ assert.match(ui.html(),/Symptoms flagged · clinical review suggested/);assert.match(ui.html(),/does not validate the answers or approve payment/);assert.match(ui.html(),/Answer validity/);assert.match(ui.html(),/Clarification needed/);
+ ui.run("nav('reports')");assert.match(ui.html(),/pill warn[^>]*>Symptoms flagged · review suggested/);
 });

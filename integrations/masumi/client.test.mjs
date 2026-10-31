@@ -16,7 +16,7 @@ test('unsupported model evidence gets one bounded retry, never a fabricated appr
  const dir=mkdtempSync(join(tmpdir(),'careloop-model-test-'));let calls=0;
  try{
   process.env.GEMINI_API_KEY='test-only';
-  globalThis.fetch=async()=>{calls++;return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({summary:'Fictional review',review_priority:'routine',findings:[{source_question:'status',quote:calls===1?'Invented':'Taking',observation:'Reported status'}],missing_information:[],possible_contradictions:[]})}]}}]});};
+  globalThis.fetch=async()=>{calls++;return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({summary:'Fictional review',review_priority:'routine',findings:[{source_question:'status',quote:calls===1?'Invented':'Taking',observation:'Reported status'}],missing_information:[],possible_contradictions:[],submission_validity:{status:'clear',issues:[]}})}]}}]});};
   const result=JSON.parse(await answer(JSON.stringify({fictional:true,answers:{status:'Taking'}}),join(dir,'journal.json')));
   assert.equal(calls,2);assert.equal(result.approval,false);assert.equal(result.findings[0].quote,'Taking');
  }finally{globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=oldKey;rmSync(dir,{recursive:true,force:true});}
