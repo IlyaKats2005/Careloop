@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
+import {DEMO_CLIENTS} from '../src/demo-clients.js';
 import {authAPI,getSession,requireIdentity,hashPassword,normalizeEmail} from '../src/auth.js';
 let ip=0;
 function database(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../drizzle/0000_email_auth.sql',import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');for(const name of ['0000_email_auth','0001_workspace_data','0002_automatic_rewards','0003_client_profiles'])sqlite.exec(readFileSync(new URL('../drizzle/'+name+'.sql',import.meta.url),'utf8'));
   return {sqlite,prepare(sql){
     const statement=sqlite.prepare(sql);
     return {bind(...args){
@@ -13,7 +14,7 @@ function database(){
     }};
   }};
 }
-const signup={email:' Fictional@Example.test ',password:'fictional-pass-123',role:'patient',displayName:'Fictional Participant'};
+const signup={email:' Fictional@Example.test ',password:'fictional-pass-123',role:'patient',recipientAddress:DEMO_CLIENTS[0].recipientAddress,displayName:'Fictional Participant'};
 function request(path='/api/session',body,extra={}){return new Request('https://careloop.test'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Origin:'https://careloop.test','cf-connecting-ip':'test-'+(++ip),...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});}
 const cookieOf=response=>response.headers.get('set-cookie').split(';')[0];
 
@@ -82,4 +83,20 @@ test('clinic registration is a demo role, and duplicate accounts do not overwrit
   assert.equal(second.status,409);assert.equal(DB.sqlite.prepare('SELECT count(*) AS n FROM auth_users').get().n,1);
   const login=await authAPI(request('/api/auth/login',{email:'clinic@example.test',password:signup.password}),{DB});assert.equal(login.status,200);
   DB.sqlite.close();
+});
+
+test('participant registration saves a validated wallet and every login returns the same profile address',async()=>{
+ const DB=database();
+ for(const recipientAddress of [undefined,'','addr1mainnet','not-a-wallet']){
+  const response=await authAPI(request('/api/auth/register',{...signup,email:'wallet@example.test',recipientAddress}),{DB});assert.equal(response.status,400);
+ }
+ const registered=await authAPI(request('/api/auth/register',{...signup,email:'wallet@example.test'}),{DB}),cookie=cookieOf(registered);
+ assert.equal((await registered.json()).user.recipientAddress,signup.recipientAddress);
+ const login=await authAPI(request('/api/auth/login',{email:'wallet@example.test',password:signup.password,recipientAddress:DEMO_CLIENTS[1].recipientAddress}),{DB});
+ assert.equal((await login.json()).user.recipientAddress,signup.recipientAddress);
+ assert.equal((await authAPI(request('/api/auth/wallet',{recipientAddress:DEMO_CLIENTS[1].recipientAddress}),{DB})).status,401);
+ const changed=await authAPI(request('/api/auth/wallet',{recipientAddress:DEMO_CLIENTS[1].recipientAddress},{cookie}),{DB});
+ assert.equal(changed.status,200);assert.equal((await changed.json()).user.recipientAddress,DEMO_CLIENTS[1].recipientAddress);
+ assert.equal((await getSession(request('/api/session',undefined,{cookie}),{DB})).user.recipientAddress,DEMO_CLIENTS[1].recipientAddress);
+ DB.sqlite.close();
 });

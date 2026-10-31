@@ -22,6 +22,13 @@
       "when": 1793380200002,
       "tag": "0002_automatic_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793380200003,
+      "tag": "0003_client_profiles",
+      "breakpoints": true
     }
   ]
 }

@@ -5,10 +5,11 @@ import {readFileSync} from 'node:fs';
 import {dataAPI,currentPeriod,normalizeAnswers} from '../src/data-api.js';
 import {commitment,leaf,hash,field} from '../src/zk-core.js';
 import {bech32} from '@scure/base';
+import {DEMO_CLIENTS} from '../src/demo-clients.js';
 let ip=0;
-function database(){const sqlite=new DatabaseSync(':memory:');for(const name of ['0000_email_auth','0001_workspace_data','0002_automatic_rewards'])sqlite.exec(readFileSync(new URL('../drizzle/'+name+'.sql',import.meta.url),'utf8'));return{sqlite,prepare(sql){const statement=sqlite.prepare(sql);return{bind(...args){return{async first(){return statement.get(...args)||null;},async all(){return{results:statement.all(...args)};},async run(){const result=statement.run(...args);return{meta:{changes:Number(result.changes)}};}};}};}};}
+function database(){const sqlite=new DatabaseSync(':memory:');for(const name of ['0000_email_auth','0001_workspace_data','0002_automatic_rewards','0003_client_profiles'])sqlite.exec(readFileSync(new URL('../drizzle/'+name+'.sql',import.meta.url),'utf8'));return{sqlite,prepare(sql){const statement=sqlite.prepare(sql);return{bind(...args){return{async first(){return statement.get(...args)||null;},async all(){return{results:statement.all(...args)};},async run(){const result=statement.run(...args);return{meta:{changes:Number(result.changes)}};}};}};}};}
 const sha=async text=>Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))).toString('hex');
-async function user(DB,role){const id=crypto.randomUUID(),token=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');DB.sqlite.prepare('INSERT INTO auth_users VALUES (?,?,?,?,?,?,?,?)').run(id,id+'@example.test',role,role,'hash','salt',100000,1);DB.sqlite.prepare('INSERT INTO auth_sessions VALUES (?,?,?,?)').run(await sha(token),id,1,Math.floor(Date.now()/1000)+3600);return{cookie:'__Host-careloop_session='+token,id};}
+async function user(DB,role){const id=crypto.randomUUID(),token=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');DB.sqlite.prepare('INSERT INTO auth_users (id,email,display_name,role,password_hash,password_salt,password_iterations,created_at,recipient_address) VALUES (?,?,?,?,?,?,?,?,?)').run(id,id+'@example.test',role,role,'hash','salt',100000,1,role==='patient'?recipientAddress:null);DB.sqlite.prepare('INSERT INTO auth_sessions VALUES (?,?,?,?)').run(await sha(token),id,1,Math.floor(Date.now()/1000)+3600);return{cookie:'__Host-careloop_session='+token,id};}
 async function call(DB,path,{cookie='',method='GET',body,services={},env={}}={}){const request=new Request('https://careloop.test'+path,{method,headers:{cookie,'Content-Type':'application/json',Origin:'https://careloop.test','cf-connecting-ip':'data-test-'+(++ip)},...(body===undefined?{}:{body:JSON.stringify(body)})});const response=await dataAPI(request,{DB,...env},services);return{status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
 const answerFor=p=>({dose:'',lastDose:'',missed:'No',changes:'',details:'',status:'Feeling okay',medication:p.medicationOptions[0]||'',symptoms:Object.fromEntries(p.symptoms.map(s=>[s,'None'])),urgent:[],impact:'Not at all',hydration:'Yes',contact:'No',notes:'Fictional report.'});
 const reportFor=(p,secret='123')=>({programId:p.id,periodId:currentPeriod(p).id,fictional:true,answers:answerFor(p),commitment:commitment(secret)});
@@ -149,5 +150,54 @@ test('legacy analysis without a validity check cannot create a new sponsor payme
  // Explicit clinic resolution still authorizes the normal sponsored path.
  const reviewed=await call(DB,`/api/data/reports/${id}/review`,{cookie:clinic.cookie,method:'POST',body:{action:'approve',eligible:true},env:relayEnv});
  assert.equal(reviewed.body.report.payout.state,'queued');
+ DB.sqlite.close();
+});
+
+test('demo starts with three enrolled profiles and one registered client who must enroll first',async()=>{
+ const DB=database(),start=await call(DB,'/api/demo/start',{method:'POST',body:{}}),cookie=start.cookie;
+ assert.equal(start.body.demoClients.length,4);assert.equal(start.body.demoClients.filter(c=>c.enrolledProgramIds.length).length,3);
+ assert.equal(new Set(start.body.demoClients.map(c=>c.recipientAddress)).size,4);assert.equal(start.body.profile.id,'alex');
+ const sam=await call(DB,'/api/workspace?mode=demo&client=sam',{cookie});assert.equal(sam.body.profile.displayName,'Sam Rivera');assert.equal(sam.body.programs.length,0);assert.equal(sam.body.enrollments.length,0);
+ assert.equal(sam.body.profile.recipientAddress,DEMO_CLIENTS[3].recipientAddress);
+ const program=start.body.programs[0],invite=sam.body.availablePrograms.find(p=>p.id===program.id);
+ assert.equal((await call(DB,'/api/data/reports?mode=demo&client=sam',{cookie,method:'POST',body:reportFor(program)})).status,404);
+ const stranger=await call(DB,'/api/demo/start',{method:'POST',body:{}});
+ assert.equal((await call(DB,'/api/data/enroll?mode=demo&client=sam',{cookie:stranger.cookie,method:'POST',body:{code:invite.invitationCode,commitment:commitment('456')}})).status,404);
+ const join=()=>call(DB,'/api/data/enroll?mode=demo&client=sam',{cookie,method:'POST',body:{code:invite.invitationCode,commitment:commitment('456')}});
+ const joined=await join();assert.equal(joined.status,200);assert.equal((await join()).body.enrollment.id,joined.body.enrollment.id);
+ const saved=await call(DB,'/api/data/reports?mode=demo&client=sam',{cookie,method:'POST',body:reportFor(program,'456')});assert.equal(saved.status,201);
+ assert.equal(saved.body.report.recipientAddress,DEMO_CLIENTS[3].recipientAddress);
+ const reload=await call(DB,'/api/workspace?mode=demo&client=sam',{cookie});assert.equal(reload.body.reports.length,1);assert.equal(reload.body.demoClients.filter(c=>c.enrolledProgramIds.length).length,4);
+ const alex=await call(DB,'/api/workspace?mode=demo&client=alex',{cookie});assert.equal(alex.body.reports.length,0);
+ assert.equal((await call(DB,'/api/data/reports/'+saved.body.report.id+'/status?mode=demo&client=alex',{cookie})).status,404);
+ const clinic=await call(DB,'/api/workspace?mode=demo&view=clinic',{cookie});assert.equal(clinic.body.reports.length,1);
+ assert.equal((await call(DB,'/api/workspace?mode=demo&client=unknown',{cookie})).status,400);
+ DB.sqlite.close();
+});
+
+test('report destinations come from the saved profile and cannot be replaced by form data or later profile edits',async()=>{
+ const {DB,patient,program}=await setup(),payload=reportFor(program);
+ const rejected=await call(DB,'/api/data/reports',{cookie:patient.cookie,method:'POST',body:{...payload,recipientAddress:DEMO_CLIENTS[1].recipientAddress}});assert.equal(rejected.status,409);assert.equal(rejected.body.error,'WALLET_MISMATCH');
+ assert.equal(DB.sqlite.prepare('SELECT count(*) AS n FROM care_reports').get().n,0);
+ const saved=await call(DB,'/api/data/reports',{cookie:patient.cookie,method:'POST',body:payload});assert.equal(saved.status,201);assert.equal(saved.body.report.recipientAddress,recipientAddress);
+ DB.sqlite.prepare('UPDATE auth_users SET recipient_address=? WHERE id=?').run(DEMO_CLIENTS[1].recipientAddress,patient.id);
+ const approved=await call(DB,'/api/data/reports/'+saved.body.report.id+'/analyze',{cookie:patient.cookie,method:'POST',body:{},env:relayEnv,services:{analyze:async()=>({status:200,body:cleanAI})}});
+ assert.equal(approved.body.report.payout.recipientAddress,recipientAddress);
+ assert.equal((await call(DB,'/api/workspace',{cookie:patient.cookie})).body.profile.recipientAddress,DEMO_CLIENTS[1].recipientAddress);
+ DB.sqlite.close();
+});
+
+test('restart creates a fresh three-plus-one cohort without deleting old reports, approvals or payment jobs',async()=>{
+ const DB=database(),start=await call(DB,'/api/demo/start',{method:'POST',body:{}}),cookie=start.cookie,program=start.body.programs[0];
+ const created=await call(DB,'/api/data/reports?mode=demo',{cookie,method:'POST',body:reportFor(program)}),id=created.body.report.id;
+ const approved=await call(DB,`/api/data/reports/${id}/analyze?mode=demo`,{cookie,method:'POST',body:{},env:relayEnv,services:{analyze:async()=>({status:200,body:cleanAI})}});assert.equal(approved.body.report.payout.state,'queued');
+ const prior=DB.sqlite.prepare('SELECT * FROM care_payment_jobs').get();
+ const restart=await call(DB,'/api/demo/restart',{cookie,method:'POST',body:{}});assert.equal(restart.status,200);assert.notEqual(restart.cookie,cookie);assert.notEqual(restart.body.workspace.id,start.body.workspace.id);
+ assert.equal(restart.body.reports.length,0);assert.equal(restart.body.demoClients.filter(c=>c.enrolledProgramIds.length).length,3);
+ assert.deepEqual(DB.sqlite.prepare('SELECT * FROM care_payment_jobs').get(),prior);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) AS n FROM care_reports').get().n,1);
+ assert.equal((await call(DB,`/api/data/reports/${id}/status?mode=demo`,{cookie:restart.cookie})).status,404);
+ assert.equal((await call(DB,`/api/data/reports/${id}/status?mode=demo`,{cookie})).body.report.payout.id,prior.id);
+ const resume=await call(DB,'/api/demo/start',{cookie:restart.cookie,method:'POST',body:{}});assert.equal(resume.body.workspace.id,restart.body.workspace.id);
  DB.sqlite.close();
 });

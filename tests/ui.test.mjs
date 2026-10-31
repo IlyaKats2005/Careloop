@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {dataAPI} from '../src/data-api.js';
+import {createLocalDatabase} from '../scripts/local-db.mjs';
 import * as programsModule from '../src/programs.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
@@ -14,7 +16,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 // successful HTTP mutations change this server state. Data API authorization,
 // SQL constraints and real persistence have their own SQLite-backed tests.
 function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
- const state={programs:copy(programs).map(p=>({...p,invitationCode:'JOIN-'+p.id})),reports:copy(reports),enrollments:[]};
+ const state={programs:copy(programs).map(p=>({...p,invitationCode:'JOIN-'+p.id})),reports:copy(reports),enrollments:[],profile:{id:'alex',displayName:'Alex Morgan',recipientAddress:'addr_test1fixture'}};
  const requests=[],hooks={};
  async function fetch(url,options={},session={signedIn:false,user:null}){
   const parsed=new URL(url,'https://careloop.test'),path=parsed.pathname,method=options.method||'GET';
@@ -82,7 +84,7 @@ test('submission waits for the server record, then automatically requests AI wit
  const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);
  const submission=ui.run('submitReport()');await tick();
  assert.equal(ui.data('reports.length'),0);assert.equal(ui.data('page'),'overview');assert.match(ui.element('#formError').textContent,/Saving/);
- const request=backend.requests.find(r=>r.path==='/api/data/reports');assert.equal(request.mode,'demo');assert.equal(request.credentials,'same-origin');assert.equal(request.body.fictional,true);assert.equal(request.body.commitment,'1234');assert.equal(request.body.secret,undefined);assert.equal(request.body.program,undefined);assert.equal(request.body.clinical,undefined);
+ const request=backend.requests.find(r=>r.path==='/api/data/reports');assert.equal(request.mode,'demo');assert.equal(request.credentials,'same-origin');assert.equal(request.body.fictional,true);assert.equal(request.body.commitment,'1234');assert.equal(request.body.recipientAddress,undefined);assert.equal(request.body.secret,undefined);assert.equal(request.body.program,undefined);assert.equal(request.body.clinical,undefined);
  saveGate.resolve();await tick();
  assert.equal(ui.data('reports.length'),1);assert.equal(ui.data('reports[0].id'),backend.state.reports[0].id);assert.equal(ui.data('reports[0].participant'),'P-SERVER');assert.match(ui.html(),/Analyzing/);
  assert.equal(ui.data('reports[0].payment'),'Pending');assert.equal(ui.data('reports[0].clinical'),'Awaiting review');
@@ -119,8 +121,8 @@ test('program creation and editing await server persistence, preserve report sna
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('clinic')");ui.run('editProgram(null)');
  const custom=programsModule.normalizeProgram({id:'CUSTOM-01',name:'Custom follow-up',symptoms:['Sleep disruption','Fatigue']});fillEditor(ui,custom);await ui.run('saveProgram()');
  assert.equal(ui.data('programId'),'CUSTOM-01-SERVER');assert.equal(backend.requests.find(r=>r.path==='/api/data/programs').method,'POST');
- ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const original=ui.data('reports[0]');
- ui.run("switchRole('clinic');editProgram('CUSTOM-01-SERVER')");const changed=programsModule.normalizeProgram({...custom,id:'CUSTOM-01-SERVER',name:'Updated follow-up',symptoms:['Physical discomfort']});fillEditor(ui,changed);await ui.run('saveProgram()');
+ await ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const original=ui.data('reports[0]');
+ await ui.run("switchRole('clinic')");ui.run("editProgram('CUSTOM-01-SERVER')");const changed=programsModule.normalizeProgram({...custom,id:'CUSTOM-01-SERVER',name:'Updated follow-up',symptoms:['Physical discomfort']});fillEditor(ui,changed);await ui.run('saveProgram()');
  assert.equal(ui.data('currentProgram().name'),'Updated follow-up');assert.deepEqual(ui.data('reports[0].programConfig'),original.programConfig);assert.equal(backend.requests.find(r=>r.path==='/api/data/programs/CUSTOM-01-SERVER').method,'PATCH');assert.equal(ui.storageWrites.length,0);
 });
 
@@ -130,7 +132,7 @@ test('AI errors retain the server report and support a retry while review and re
  assert.equal(ui.data('reports.length'),1);assert.match(ui.html(),/AI quota reached/);assert.equal(ui.data('reports[0].payment'),'Pending');assert.equal(ui.data('reports[0].clinical'),'Awaiting review');
  const id=ui.data('reports[0].id');fail=false;await ui.run(`runAI(${JSON.stringify(id)})`);assert.match(ui.html(),/Analysis ready/);assert.equal(ui.data('reports[0].aiError'),'');
  ui.run(`openReport(${JSON.stringify(id)})`);ui.element('#eligible').checked=true;await ui.run("clinicAction('approve')");assert.equal(backend.requests.filter(r=>r.path.endsWith('/review')).length,0,'Participant UI must not send clinic mutations');
- ui.run(`switchRole('clinic');openReport(${JSON.stringify(id)})`);ui.element('#eligible').checked=false;await ui.run("clinicAction('approve')");assert.equal(backend.requests.filter(r=>r.path.endsWith('/review')).length,0);
+ await ui.run("switchRole('clinic')");ui.run(`openReport(${JSON.stringify(id)})`);ui.element('#eligible').checked=false;await ui.run("clinicAction('approve')");assert.equal(backend.requests.filter(r=>r.path.endsWith('/review')).length,0);
  ui.element('#decision').value='Fictional report reviewed.';await ui.run("clinicAction('review')");assert.equal(ui.data('reports[0].clinical'),'Reviewed');assert.equal(ui.data('reports[0].payment'),'Pending');
  ui.element('#eligible').checked=true;await ui.run("clinicAction('approve')");assert.equal(ui.data('reports[0].payment'),'Approved');assert.equal(ui.data('rewardState(reports[0]).state'),'approved');
  await ui.run(`openRewards(${JSON.stringify(id)})`);assert.equal(ui.data('page'),'rewards');assert.equal(ui.cloudRewards.length,0);assert.doesNotMatch(ui.html(),/Real wallet workspace|manual wallet tools|Private enrollment recovery/);
@@ -139,7 +141,7 @@ test('AI errors retain the server report and support a retry while review and re
 test('examples stay read-only, blockchain navigation receives safe state, and wallet metadata is never treated as paid',async()=>{
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('clinic')");ui.run("nav('reports')");assert.match(ui.html(),/preloaded example/);const example=ui.data('examples()[0].id');ui.run(`openReport(${JSON.stringify(example)})`);await ui.run("clinicAction('approve')");assert.equal(backend.state.reports.length,0);
  ui.run("nav('blockchain')");assert.match(ui.html(),/Blockchain lab fixture/);assert.equal(ui.blockchainCalls.at(-1).live.network,'Preprod');assert.equal(ui.blockchainCalls.at(-1).live.secret,undefined);
- ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const id=ui.data('reports[0].id');
+ await ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const id=ui.data('reports[0].id');
  await ui.run(`window.careloopSaveChain(${JSON.stringify(id)},{kind:'claim',txHash:'${'a'.repeat(64)}'})`);assert.equal(ui.data('reports[0].chain.claim.verified'),false);assert.equal(ui.data('reports[0].payment'),'Pending');assert.notEqual(ui.data('rewardState(reports[0]).state'),'confirmed');
  assert.equal(ui.storageWrites.length,0);
 });
@@ -162,7 +164,7 @@ function livePolicy(backend,state='awaiting_proof'){
 
 test('approved live submission automatically sends a public proof, then shows paid only for the matching verified receipt',async()=>{
  const backend=service();livePolicy(backend);const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();await tick();
- assert.equal(backend.requests.find(r=>r.path==='/api/data/reports').body.recipientAddress,'addr_test1fixture');
+ assert.equal(backend.requests.find(r=>r.path==='/api/data/reports').body.recipientAddress,undefined);
  assert.equal(ui.proofCalls.length,1);const proof=backend.requests.find(r=>r.path.endsWith('/proof'));assert.deepEqual(proof.body,{proof:{pi_a:['test']},publicSignals:['public']});assert.equal(proof.body.secret,undefined);
  assert.match(ui.html(),/Claim queued/);assert.doesNotMatch(ui.html(),/Paid · 2 test ADA/);
  const report=backend.state.reports[0];report.payout.state='submitted';report.payout.claimTxHash='a'.repeat(64);await ui.run('pollPayout(payoutWatch)');assert.match(ui.html(),/claim has been broadcast/);assert.equal(ui.data('rewardState(reports[0]).state'),'submitted');
@@ -192,7 +194,7 @@ test('the live blockchain route keeps report polling active and its snapshot con
 });
 
 test('missing recipient stops submission before spending sponsor funds',async()=>{
- const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);ui.run("draft.recipientAddress=''");await ui.run('submitReport()');
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);ui.run("profile.recipientAddress=''");await ui.run('submitReport()');
  assert.match(ui.element('#formError').textContent,/receiving address/);assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,0);
 });
 
@@ -206,7 +208,7 @@ test('demo readiness distinguishes an unreachable service and previous receipts 
 
 test('check-in exposes enrollment creation and recovery without submitting or spending',async()=>{
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('checkin')");
- assert.match(ui.html(),/Create private enrollment/);assert.match(ui.html(),/Restore recovery file/);
+ assert.match(ui.html(),/Your private enrollment is ready/);assert.match(ui.html(),/Download private recovery file/);
  ui.run('prepareEnrollment()');assert.match(ui.html(),/Download private recovery file/);
  assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,0);
 });
@@ -224,7 +226,7 @@ test('normal rewards expose recovery and proof explanation without the manual fu
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('rewards')");
  assert.match(ui.html(),/Private enrollment recovery/);assert.match(ui.html(),/Restore recovery file/);assert.match(ui.html(),/When is the ZK proof used/);
  assert.match(ui.html(),/same transaction/);assert.doesNotMatch(ui.html(),/Real wallet workspace|Prepare 20 ADA|manual wallet tools/);
- ui.run("switchRole('clinic');nav('rewards')");assert.doesNotMatch(ui.html(),/Real wallet workspace|Restore recovery file/);
+ await ui.run("switchRole('clinic')");ui.run("nav('rewards')");assert.doesNotMatch(ui.html(),/Real wallet workspace|Restore recovery file/);
 });
 
 test('symptom priority is explained separately from answer validity and reward authorization',async()=>{
@@ -232,4 +234,37 @@ test('symptom priority is explained separately from answer validity and reward a
  ui.run(`reports[0].clinical='Priority review';reports[0].ai.review_priority='priority_review';reports[0].ai.submission_validity={status:'needs_clarification',issues:[{source_question:'details',quote:'I died',reason:'Clarify the meaning.'}]};openReport(reports[0].id)`);
  assert.match(ui.html(),/Symptoms flagged · clinical review suggested/);assert.match(ui.html(),/does not validate the answers or approve payment/);assert.match(ui.html(),/Answer validity/);assert.match(ui.html(),/Clarification needed/);
  ui.run("nav('reports')");assert.match(ui.html(),/pill warn[^>]*>Symptoms flagged · review suggested/);
+});
+
+test('check-ins show the profile wallet without requesting or submitting another destination',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient');");ui.run("step=0;nav('checkin')");
+ assert.match(ui.html(),/Alex Morgan · Wallet saved at registration/);assert.match(ui.html(),/addr_test1fixture/);
+ assert.doesNotMatch(ui.html(),/id="rewardRecipient"|id="profileWallet"|connectReceivingWallet/);
+ fillReport(ui);ui.run("draft.recipientAddress='untrusted-form-destination'");await ui.run('submitReport()');
+ const request=backend.requests.find(r=>r.path==='/api/data/reports');assert.ok(request);assert.equal(request.body.recipientAddress,undefined);
+});
+
+test('four-client UI supports enrolling Sam and restarting against the real workspace API',async t=>{
+ const DB=createLocalDatabase({filename:':memory:'});t.after(()=>DB.close());let cookie='';const requests=[];
+ const backend={requests,async fetch(url,options={}){
+  const path=new URL(url,'https://careloop.test').pathname;requests.push({path,method:options.method||'GET'});
+  if(path==='/api/session')return Response.json({signedIn:false,user:null});
+  if(path==='/api/sponsor/status')return Response.json({configured:false,online:false,remainingBudget:0});
+  const response=await dataAPI(new Request('https://careloop.test'+url,{method:options.method||'GET',headers:{Cookie:cookie,Origin:'https://careloop.test','Content-Type':'application/json','cf-connecting-ip':'ui-demo-cohort'},...(options.body?{body:options.body}:{})}),{DB},{analyze:async()=>({status:200,body:goodAnalysis})});
+  assert.ok(response,'Known API route');const set=response.headers.get('set-cookie');if(set)cookie=set.split(';')[0];return response;
+ }};
+ const ui=await workspace({backend});await ui.run("enterWorkspace('clinic')");assert.match(ui.html(),/Demo participants/);assert.match(ui.html(),/Sam Rivera/);
+ ui.run("nav('demoClients')");assert.match(ui.html(),/3 enrolled · 1 awaiting enrollment/);assert.match(ui.html(),/Restart demo/);
+ await ui.run("selectDemoClient('sam')");assert.match(ui.html(),/Join your first program/);assert.match(ui.html(),/Sam Rivera · Wallet saved at registration/);
+ assert.match(ui.ownerChanges.at(-1),/:sam$/);assert.equal(ui.data('reports.length'),0);
+ const id=ui.data('availablePrograms[0].id');ui.run(`useDemoInvitation(${JSON.stringify(id)})`);await ui.run('joinProgram()');assert.equal(ui.data('programs.length'),1);assert.match(ui.html(),/You’re enrolled/);
+ fillReport(ui);await ui.run('submitReport()');assert.equal(ui.data('reports.length'),1);
+ assert.equal(ui.data('reports[0].recipientAddress'),ui.data('profile.recipientAddress'));
+ await ui.run("selectDemoClient('maya')");assert.equal(ui.data('reports.length'),0);assert.match(ui.ownerChanges.at(-1),/:maya$/);
+ await ui.run("selectDemoClient('sam')");assert.equal(ui.data('reports.length'),1);
+ const oldWorkspace=ui.data('cloudWorkspace.id');await ui.run('restartDemo()');assert.notEqual(ui.data('cloudWorkspace.id'),oldWorkspace);assert.equal(ui.data('demoClientId'),'alex');assert.equal(ui.data('reports.length'),0);
+ assert.equal(ui.data('demoClients.filter(c=>c.enrolledProgramIds.length).length'),3);
+ assert.equal(await DB.prepare('SELECT count(*) AS n FROM care_reports').first('n'),1);
+ assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
+ const fresh=await workspace({backend,storage:ui.storage});await fresh.run("enterWorkspace('patient')");assert.equal(fresh.data('cloudWorkspace.id'),ui.data('cloudWorkspace.id'));assert.equal(fresh.data('demoClientId'),'alex');
 });

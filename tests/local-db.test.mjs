@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createLocalDatabase} from '../scripts/local-db.mjs';
+import {DEMO_CLIENTS} from '../src/demo-clients.js';
 import {authAPI,getSession} from '../src/auth.js';
 import {dataAPI,currentPeriod} from '../src/data-api.js';
 
@@ -17,7 +18,7 @@ const cookieOf=response=>response.headers.get('Set-Cookie').split(';')[0];
 test('local migrations run once and password sessions persist after database reopen',async t=>{
  const options=fixture(t);let DB=createLocalDatabase(options);
  try{
-  const registration=await authAPI(request('/api/auth/register',{email:'local@example.test',password:'fictional-local-password',displayName:'Local Demo',role:'patient'}),{DB});
+  const registration=await authAPI(request('/api/auth/register',{email:'local@example.test',password:'fictional-local-password',displayName:'Local Demo',role:'patient',recipientAddress:DEMO_CLIENTS[0].recipientAddress}),{DB});
   assert.equal(registration.status,200);const cookie=cookieOf(registration),user=(await registration.json()).user;
   const before=await DB.prepare('SELECT tag FROM _careloop_local_migrations ORDER BY tag').all();assert.ok(before.results.length>=2);
   DB.close();DB=createLocalDatabase(options);
@@ -35,7 +36,7 @@ test('real workspace reports and JSON audit updates persist through the D1 adapt
   const answers={status:'About the same',medication:program.medicationOptions[0]||'',missed:'No',symptoms:Object.fromEntries(program.symptoms.map(topic=>[topic,'None'])),urgent:[],impact:'Not at all',hydration:'Yes',contact:'No'};
   const saved=await dataAPI(request('/api/data/reports?mode=demo',{fictional:true,programId:program.id,periodId:currentPeriod(program).id,commitment:'123',answers},cookie),{DB});assert.equal(saved.status,201);
   const report=(await saved.json()).report;
-  const reviewed=await dataAPI(request('/api/data/reports/'+report.id+'/review?mode=demo',{action:'review',note:'Fictional local review.'},cookie),{DB});assert.equal(reviewed.status,200);
+  const reviewed=await dataAPI(request('/api/data/reports/'+report.id+'/review?mode=demo&view=clinic',{action:'review',note:'Fictional local review.'},cookie),{DB});assert.equal(reviewed.status,200);
   DB.close();DB=createLocalDatabase(options);
   const restored=await dataAPI(request('/api/workspace?mode=demo',undefined,cookie),{DB});assert.equal(restored.status,200);
   const reports=(await restored.json()).reports;assert.equal(reports.length,1);assert.equal(reports[0].id,report.id);assert.equal(reports[0].clinical,'Reviewed');assert.equal(reports[0].decision,'Fictional local review.');assert.equal(reports[0].audit.length,2);

@@ -1,4 +1,5 @@
 import {getSession} from './auth.js';
+import {DEMO_CLIENTS,demoParticipantKey} from './demo-clients.js';
 import {DEFAULT_PROGRAMS,normalizeProgram} from './programs.js';
 import {field,commitment as makeCommitment,leaf,tree,randomSecret,config} from './zk-core.js';
 import {programFieldId,periodFieldId} from './reward-status.js';
@@ -45,8 +46,27 @@ export function normalizeAnswers(body,program){
 }
 async function seed(DB,workspace){
  for(const template of DEFAULT_PROGRAMS){const id='P'+workspace.id.replaceAll('-','').slice(0,10)+'-'+template.id;const program=normalizeProgram({...template,id});await run(DB,'INSERT OR IGNORE INTO care_programs (id,workspace_id,config_json,invitation_code,created_at,updated_at) VALUES (?,?,?,?,?,?)',program.id,workspace.id,JSON.stringify(program),randomHex(12).toUpperCase(),now(),now());}
- if(workspace.mode==='demo'){const programs=await all(DB,'SELECT id FROM care_programs WHERE workspace_id=?',workspace.id);for(const p of programs)await ensureEnrollment(DB,p.id,workspace.id,'demo:'+workspace.id);}
+ if(workspace.mode==='demo')await seedDemoClients(DB,workspace);
 }
+async function seedDemoClients(DB,workspace){
+ const programs=await all(DB,'SELECT id FROM care_programs WHERE workspace_id=?',workspace.id);
+ for(const client of DEMO_CLIENTS){
+  await run(DB,'INSERT OR IGNORE INTO care_demo_clients (workspace_id,client_id,display_name,recipient_address) VALUES (?,?,?,?)',workspace.id,client.id,client.displayName,client.recipientAddress);
+  const saved=await first(DB,'SELECT seeded FROM care_demo_clients WHERE workspace_id=? AND client_id=?',workspace.id,client.id);
+  if(!saved.seeded){
+   if(client.initiallyEnrolled)for(const p of programs)await ensureEnrollment(DB,p.id,workspace.id,demoParticipantKey(workspace.id,client.id));
+   await run(DB,'UPDATE care_demo_clients SET seeded=1 WHERE workspace_id=? AND client_id=?',workspace.id,client.id);
+  }
+ }
+}
+async function demoContext(DB,workspace,request){
+ const params=new URL(request.url).searchParams,clientId=params.get('client')||'alex',view=params.get('view')||'patient';
+ if(!DEMO_CLIENTS.some(c=>c.id===clientId)||!['patient','clinic'].includes(view))throw fail('Unknown demo client or workspace.');
+ if(!await first(DB,'SELECT client_id FROM care_demo_clients WHERE workspace_id=? AND client_id=? AND seeded=1',workspace.id,'sam'))await seedDemoClients(DB,workspace);
+ const client=await first(DB,'SELECT * FROM care_demo_clients WHERE workspace_id=? AND client_id=?',workspace.id,clientId);
+ return{DB,mode:'demo',role:'demo',view,workspace,key:demoParticipantKey(workspace.id,clientId),profile:{id:clientId,displayName:client.display_name,recipientAddress:client.recipient_address}};
+}
+const participantView=ctx=>ctx.role==='patient'||ctx.mode==='demo'&&ctx.view==='patient';
 async function ensureEnrollment(DB,programId,workspaceId,key){
  let enrollment=await first(DB,'SELECT * FROM care_enrollments WHERE program_id=? AND participant_key=?',programId,key);if(enrollment)return enrollment;
  await run(DB,'INSERT OR IGNORE INTO care_enrollments (id,program_id,workspace_id,participant_key,pseudonym,commitment,created_at) VALUES (?,?,?,?,?,?,?)',crypto.randomUUID(),programId,workspaceId,key,'P-'+randomHex(4).toUpperCase(),null,now());
@@ -54,21 +74,21 @@ async function ensureEnrollment(DB,programId,workspaceId,key){
 }
 async function context(request,env){
  const DB=database(env),mode=new URL(request.url).searchParams.get('mode')||'account';
- if(mode==='demo'){const token=cookieToken(request);if(!token)throw fail('Start or resume your private demo first.',401,'DEMO_REQUIRED');const workspace=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(token),'demo');if(!workspace||workspace.expires_at<=now())throw fail('This demo has expired. Start a new demo.',401,'DEMO_EXPIRED');return{DB,mode,role:'demo',workspace,key:'demo:'+workspace.id};}
+ if(mode==='demo'){const token=cookieToken(request);if(!token)throw fail('Start or resume your private demo first.',401,'DEMO_REQUIRED');const workspace=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(token),'demo');if(!workspace||workspace.expires_at<=now())throw fail('This demo has expired. Start a new demo.',401,'DEMO_EXPIRED');return demoContext(DB,workspace,request);}
  if(mode!=='account')throw fail('Invalid workspace mode.');
  const session=await getSession(request,env);if(!session.user)throw fail('Sign in to access your workspace.',401,'AUTH_REQUIRED');
- const user=session.user;if(user.role==='patient')return{DB,mode,role:'patient',workspace:{id:'patient:'+user.id,mode:'account'},key:user.id};
+ const user=session.user;if(user.role==='patient')return{DB,mode,role:'patient',workspace:{id:'patient:'+user.id,mode:'account'},key:user.id,profile:user};
  let workspace=await first(DB,'SELECT * FROM care_workspaces WHERE owner_user_id=?',user.id);
  if(!workspace){await run(DB,'INSERT OR IGNORE INTO care_workspaces (id,owner_user_id,demo_token_hash,mode,expires_at,created_at) VALUES (?,?,?,?,?,?)',crypto.randomUUID(),user.id,null,'account',null,now());workspace=await first(DB,'SELECT * FROM care_workspaces WHERE owner_user_id=?',user.id);}
  await seed(DB,workspace);return{DB,mode,role:'clinic',workspace,key:user.id};
 }
-function canClinic(ctx){if(ctx.role!=='clinic'&&ctx.role!=='demo')throw fail('Only the program clinic can do this.',403,'CLINIC_REQUIRED');}
-function canPatient(ctx){if(ctx.role!=='patient'&&ctx.role!=='demo')throw fail('Only an enrolled participant can do this.',403,'PARTICIPANT_REQUIRED');}
+function canClinic(ctx){if(ctx.role!=='clinic'&&!(ctx.mode==='demo'&&ctx.view==='clinic'))throw fail('Only the program clinic can do this.',403,'CLINIC_REQUIRED');}
+function canPatient(ctx){if(!participantView(ctx))throw fail('Only an enrolled participant can do this.',403,'PARTICIPANT_REQUIRED');}
 function enrollmentJSON(row){return{id:row.id,programId:row.program_id,participant:row.pseudonym,commitment:row.commitment};}
 function reportJSON(row){return{recipientAddress:row.recipient_address||null,rewardDecision:parse(row.reward_decision_json,{state:row.approval_json?'approved':'checking',reasons:[],clinicalReview:'routine'}),payout:row.payment_job?payoutJSON(row.payment_job):{state:'not_requested',recipientAddress:row.recipient_address||null,error:row.payout_error||''},id:row.id,programId:row.program_id,programConfig:parse(row.program_json),participant:row.pseudonym,periodId:row.period_id,period:row.period_label,date:new Date(row.created_at*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}),quality:row.quality,clinical:row.clinical,payment:row.payment,answers:parse(row.answers_json),ai:parse(row.ai_json),aiError:row.ai_error,aiStatus:row.ai_status,audit:parse(row.audit_json,[]),decision:row.decision,rewardApproval:parse(row.approval_json),chain:parse(row.chain_json,{}),createdAt:new Date(row.created_at*1000).toISOString()};}
 async function payload(ctx){
  const {DB}=ctx;let programs,enrollments,reports;
- if(ctx.role==='patient'){
+ if(participantView(ctx)){
   programs=await all(DB,'SELECT p.* FROM care_programs p JOIN care_enrollments e ON e.program_id=p.id WHERE e.participant_key=? ORDER BY p.created_at,p.id',ctx.key);
   enrollments=await all(DB,'SELECT * FROM care_enrollments WHERE participant_key=?',ctx.key);
   reports=await all(DB,'SELECT r.*,e.pseudonym FROM care_reports r JOIN care_enrollments e ON e.id=r.enrollment_id WHERE e.participant_key=? ORDER BY r.created_at DESC,r.id',ctx.key);
@@ -77,19 +97,26 @@ async function payload(ctx){
   enrollments=await all(DB,'SELECT * FROM care_enrollments WHERE workspace_id=?',ctx.workspace.id);
   reports=await all(DB,'SELECT r.*,e.pseudonym FROM care_reports r JOIN care_enrollments e ON e.id=r.enrollment_id WHERE r.workspace_id=? ORDER BY r.created_at DESC,r.id',ctx.workspace.id);
  }
- const jobs=await all(DB,'SELECT j.* FROM care_payment_jobs j JOIN care_reports r ON r.id=j.report_id WHERE '+(ctx.role==='patient'?'r.enrollment_id IN (SELECT id FROM care_enrollments WHERE participant_key=?)':'r.workspace_id=?'),ctx.role==='patient'?ctx.key:ctx.workspace.id);const jobsByReport=new Map(jobs.map(j=>[j.report_id,j]));for(const report of reports)report.payment_job=jobsByReport.get(report.id);
- return{workspace:{id:ctx.workspace.id,mode:ctx.mode,role:ctx.role,expiresAt:ctx.workspace.expires_at?new Date(ctx.workspace.expires_at*1000).toISOString():null},programs:programs.map(p=>({...parse(p.config_json),...(ctx.role==='patient'?{}:{invitationCode:p.invitation_code})})),enrollments:enrollments.map(enrollmentJSON),reports:reports.map(reportJSON)};
+ const jobs=await all(DB,'SELECT j.* FROM care_payment_jobs j JOIN care_reports r ON r.id=j.report_id WHERE '+(participantView(ctx)?'r.enrollment_id IN (SELECT id FROM care_enrollments WHERE participant_key=?)':'r.workspace_id=?'),participantView(ctx)?ctx.key:ctx.workspace.id);const jobsByReport=new Map(jobs.map(j=>[j.report_id,j]));for(const report of reports)report.payment_job=jobsByReport.get(report.id);
+ let demoClients=[],availablePrograms=[];
+ if(ctx.mode==='demo'){
+  const clients=await all(DB,'SELECT * FROM care_demo_clients WHERE workspace_id=? ORDER BY client_id',ctx.workspace.id),memberships=await all(DB,'SELECT participant_key,program_id FROM care_enrollments WHERE workspace_id=?',ctx.workspace.id);
+  demoClients=clients.map(c=>({id:c.client_id,displayName:c.display_name,recipientAddress:c.recipient_address,enrolledProgramIds:memberships.filter(e=>e.participant_key===demoParticipantKey(ctx.workspace.id,c.client_id)).map(e=>e.program_id)}));
+  const available=await all(DB,'SELECT * FROM care_programs WHERE workspace_id=? ORDER BY created_at,id',ctx.workspace.id);
+  availablePrograms=available.map(p=>({id:p.id,name:parse(p.config_json).name,invitationCode:p.invitation_code,active:parse(p.config_json).active}));
+ }
+ return{workspace:{id:ctx.workspace.id,mode:ctx.mode,role:ctx.role,view:ctx.view||ctx.role,expiresAt:ctx.workspace.expires_at?new Date(ctx.workspace.expires_at*1000).toISOString():null},profile:participantView(ctx)?ctx.profile:null,demoClients,availablePrograms,programs:programs.map(p=>({...parse(p.config_json),...(participantView(ctx)?{}:{invitationCode:p.invitation_code})})),enrollments:enrollments.map(enrollmentJSON),reports:reports.map(reportJSON)};
 }
 async function programFor(ctx,id,ownerOnly=false){
  const program=await first(ctx.DB,'SELECT * FROM care_programs WHERE id=?',id);
  if(!program)throw fail('Program not found.',404);
- if(ownerOnly||ctx.role!=='patient'){if(program.workspace_id!==ctx.workspace.id)throw fail('Program not found.',404);}
+ if(ownerOnly||!participantView(ctx)){if(program.workspace_id!==ctx.workspace.id)throw fail('Program not found.',404);}
  else if(!await first(ctx.DB,'SELECT id FROM care_enrollments WHERE program_id=? AND participant_key=?',id,ctx.key))throw fail('Program not found.',404);
  return program;
 }
 async function reportFor(ctx,id){
  const row=await first(ctx.DB,'SELECT r.*,e.pseudonym,e.participant_key,e.commitment FROM care_reports r JOIN care_enrollments e ON e.id=r.enrollment_id WHERE r.id=?',id);
- if(!row||(ctx.role==='patient'?row.participant_key!==ctx.key:row.workspace_id!==ctx.workspace.id))throw fail('Report not found.',404);
+ if(!row||(participantView(ctx)?row.participant_key!==ctx.key:row.workspace_id!==ctx.workspace.id))throw fail('Report not found.',404);
  row.payment_job=await first(ctx.DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',id);return row;
 }
 async function bindCommitment(ctx,enrollment,value){
@@ -121,16 +148,16 @@ function chainMetadata(body){
 }
 export async function dataAPI(request,env={},services={}){
  const url=new URL(request.url),path=url.pathname;
- if(path!=='/api/workspace'&&path!=='/api/demo/start'&&!path.startsWith('/api/data/'))return null;
+ if(path!=='/api/workspace'&&!['/api/demo/start','/api/demo/restart'].includes(path)&&!path.startsWith('/api/data/'))return null;
  try{
   if(request.method!=='GET'){checkMutation(request);}
-  if(path==='/api/demo/start'){
+  if(path==='/api/demo/start'||path==='/api/demo/restart'){
    if(request.method!=='POST')return json({error:'Method not allowed'},405);
-   const DB=database(env);const previous=cookieToken(request);if(previous){const existing=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(previous),'demo');if(existing&&existing.expires_at>now())return json(await payload({DB,mode:'demo',role:'demo',workspace:existing,key:'demo:'+existing.id}));}
+   const DB=database(env);const previous=cookieToken(request);if(previous&&path==='/api/demo/start'){const existing=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(previous),'demo');if(existing&&existing.expires_at>now())return json(await payload(await demoContext(DB,existing,request)));}
    throttle('demo:'+(request.headers.get('cf-connecting-ip')||'local'),8);
    const token=randomHex(32),workspace={id:crypto.randomUUID(),mode:'demo',expires_at:now()+TTL};
    await run(DB,'INSERT INTO care_workspaces (id,owner_user_id,demo_token_hash,mode,expires_at,created_at) VALUES (?,?,?,?,?,?)',workspace.id,null,await digest(token),'demo',workspace.expires_at,now());await seed(DB,workspace);
-   return json(await payload({DB,mode:'demo',role:'demo',workspace,key:'demo:'+workspace.id}),200,{'Set-Cookie':`${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL}`});
+   return json(await payload(await demoContext(DB,workspace,request)),200,{'Set-Cookie':`${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL}`});
   }
   const ctx=await context(request,env),DB=ctx.DB;
   if(path==='/api/workspace'){if(request.method!=='GET')return json({error:'Method not allowed'},405);return json(await payload(ctx));}
@@ -141,7 +168,7 @@ export async function dataAPI(request,env={},services={}){
    canClinic(ctx);const count=await first(DB,'SELECT count(*) AS n FROM care_programs WHERE workspace_id=?',ctx.workspace.id);if(count.n>=30)throw fail('This workspace supports up to 30 programs.',409);
    const input=normalizeProgram(body.program),program=normalizeProgram({...input,id:input.id.slice(0,21)+'-'+randomHex(5).toUpperCase()});const code=randomHex(12).toUpperCase();
    await run(DB,'INSERT INTO care_programs (id,workspace_id,config_json,invitation_code,created_at,updated_at) VALUES (?,?,?,?,?,?)',program.id,ctx.workspace.id,JSON.stringify(program),code,now(),now());
-   if(ctx.mode==='demo')await ensureEnrollment(DB,program.id,ctx.workspace.id,ctx.key);
+   if(ctx.mode==='demo')for(const client of DEMO_CLIENTS.filter(c=>c.initiallyEnrolled))await ensureEnrollment(DB,program.id,ctx.workspace.id,demoParticipantKey(ctx.workspace.id,client.id));
    return json({program:{...program,invitationCode:code}},201);
   }
   const programMatch=path.match(/^\/api\/data\/programs\/([A-Z0-9_-]+)$/);
@@ -161,7 +188,9 @@ export async function dataAPI(request,env={},services={}){
    const period=currentPeriod(program);if(body.periodId!==period.id)throw fail('This report must use the current reporting period.',409,'PERIOD_MISMATCH');
    const enrollment=await first(DB,'SELECT * FROM care_enrollments WHERE program_id=? AND participant_key=?',program.id,ctx.key);if(!enrollment)throw fail('Join the program before submitting.',403);
    await bindCommitment(ctx,enrollment,body.commitment);const answers=normalizeAnswers(body,program),id='R-'+crypto.randomUUID();
-   const recipient=normalizeRecipient(body.recipientAddress||''),decision=rewardDecision(answers,program,null);
+   const recipient=normalizeRecipient(ctx.profile?.recipientAddress);if(!recipient)throw fail('Save your Preprod receiving address in your profile before submitting.',409,'WALLET_REQUIRED');
+   if(body.recipientAddress&&body.recipientAddress!==recipient.address)throw fail('This address differs from your saved profile wallet. Refresh the profile before submitting.',409,'WALLET_MISMATCH');
+   const decision=rewardDecision(answers,program,null);
    const quality=Object.values(answers.symptoms).includes('Not sure')?'Clarification needed':'Complete';
    try{await run(DB,'INSERT INTO care_reports (id,workspace_id,program_id,enrollment_id,period_id,period_label,program_json,answers_json,quality,clinical,payment,audit_json,created_at,updated_at,recipient_address,reward_decision_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,p.workspace_id,program.id,enrollment.id,period.id,period.label,JSON.stringify(program),JSON.stringify(answers),quality,'Awaiting review','Pending',JSON.stringify([event('Participant submitted a fictional report. Original answers saved.')]),now(),now(),recipient?.address||null,JSON.stringify(decision));}catch(error){if(/unique|constraint/i.test(String(error)))throw fail('A report is already saved for this program and reporting period.',409,'DUPLICATE_REPORT');throw error;}
    return json({report:reportJSON(await reportFor(ctx,id))},201);

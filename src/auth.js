@@ -1,3 +1,4 @@
+import {normalizeRecipient} from './payment-jobs.js';
 const COOKIE='__Host-careloop_session';
 const SESSION_SECONDS=7*24*60*60;
 const ITERATIONS=100000;
@@ -38,13 +39,13 @@ function tokenFrom(request){
   const token=values[0].slice(COOKIE.length+1);return /^[a-f0-9]{64}$/.test(token)?token:null;
 }
 function db(env){if(!env.DB?.prepare)throw fail('Account storage is temporarily unavailable. Please try again later.',503,'AUTH_STORAGE_UNAVAILABLE');return env.DB;}
-function publicUser(user){return {id:user.id,email:user.email,displayName:user.display_name,role:user.role};}
+function publicUser(user){return {id:user.id,email:user.email,displayName:user.display_name,role:user.role,recipientAddress:user.recipient_address||null};}
 function session(user=null){return {signedIn:!!user,user:user?publicUser(user):null,mode:'fictional-demo',workspaces:user?[user.role]:['patient','clinic'],clinicMembershipVerified:false,emailVerified:false};}
 
 export async function getSession(request,env={}){
   const token=tokenFrom(request);if(!token)return session();
   const tokenHash=await sha256(token);
-  const user=await db(env).prepare('SELECT u.id, u.email, u.display_name, u.role, s.expires_at FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id WHERE s.token_hash = ?').bind(tokenHash).first();
+  const user=await db(env).prepare('SELECT u.id, u.email, u.display_name, u.role, u.recipient_address, s.expires_at FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id WHERE s.token_hash = ?').bind(tokenHash).first();
   if(!user)return session();
   if(user.expires_at<=Math.floor(Date.now()/1000)){
     await db(env).prepare('DELETE FROM auth_sessions WHERE token_hash = ?').bind(tokenHash).run();
@@ -95,7 +96,7 @@ export async function authAPI(request,env={}){
       const value=await getSession(request,env);
       return request.method==='HEAD'?new Response(null,{headers}):json(value);
     }
-    if(!['/api/auth/register','/api/auth/login','/api/auth/logout'].includes(path))return json({error:'Not found'},404);
+    if(!['/api/auth/register','/api/auth/login','/api/auth/logout','/api/auth/wallet'].includes(path))return json({error:'Not found'},404);
     if(request.method!=='POST')return json({error:'Method not allowed'},405,{Allow:'POST'});
     checkOrigin(request);
     const database=db(env);
@@ -106,25 +107,34 @@ export async function authAPI(request,env={}){
     const ip=request.headers.get('cf-connecting-ip')||'local';
     limit('ip:'+ip,30);
     const body=await readBody(request);
+    if(path==='/api/auth/wallet'){
+      const current=await getSession(request,env);if(!current.user)throw fail('Sign in to save your wallet.',401,'AUTH_REQUIRED');
+      if(current.user.role!=='patient')throw fail('Only participants have reward wallets.',403);
+      const recipient=normalizeRecipient(body.recipientAddress);if(!recipient)throw fail('A Preprod receiving address is required.');
+      await database.prepare('UPDATE auth_users SET recipient_address=? WHERE id=?').bind(recipient.address,current.user.id).run();
+      return json(await getSession(request,env));
+    }
     const email=normalizeEmail(body.email);const password=validatePassword(body.password);
     limit('email:'+await sha256(email),12);
     if(path==='/api/auth/register'){
       if(!roles.has(body.role))throw fail('Choose participant or clinic.');
       const displayName=typeof body.displayName==='string'?body.displayName.trim():'';
       if(displayName.length<2||displayName.length>80)throw fail('Use a display name of 2–80 characters.');
+      const recipient=body.role==='patient'?normalizeRecipient(body.recipientAddress):null;
+      if(body.role==='patient'&&!recipient)throw fail('Add your Preprod receiving address to register.');
       const existing=await database.prepare('SELECT id FROM auth_users WHERE email = ?').bind(email).first();
       if(existing)throw fail('An account could not be created with these details. Try signing in.',409,'REGISTRATION_UNAVAILABLE');
       const salt=randomHex(16);const passwordHash=await hashPassword(password,salt);
-      const user={id:crypto.randomUUID(),email,display_name:displayName,role:body.role};
+      const user={id:crypto.randomUUID(),email,display_name:displayName,role:body.role,recipient_address:recipient?.address||null};
       try{
-        await database.prepare('INSERT INTO auth_users (id, email, display_name, role, password_hash, password_salt, password_iterations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(user.id,email,displayName,body.role,passwordHash,salt,ITERATIONS,Math.floor(Date.now()/1000)).run();
+        await database.prepare('INSERT INTO auth_users (id, email, display_name, role, password_hash, password_salt, password_iterations, created_at, recipient_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(user.id,email,displayName,body.role,passwordHash,salt,ITERATIONS,Math.floor(Date.now()/1000),user.recipient_address).run();
       }catch(error){
         if(/unique|constraint/i.test(String(error?.message)))throw fail('An account could not be created with these details. Try signing in.',409,'REGISTRATION_UNAVAILABLE');
         throw error;
       }
       return await issueSession(database,user);
     }
-    const user=await database.prepare('SELECT id, email, display_name, role, password_hash, password_salt, password_iterations FROM auth_users WHERE email = ?').bind(email).first();
+    const user=await database.prepare('SELECT id, email, display_name, role, recipient_address, password_hash, password_salt, password_iterations FROM auth_users WHERE email = ?').bind(email).first();
     // Spend the same KDF work for unknown accounts and incorrect passwords.
     const candidate=await hashPassword(password,user?.password_salt||'00'.repeat(16),user?.password_iterations||ITERATIONS);
     if(!user||!equalHash(candidate,user.password_hash))throw fail('Email or password is incorrect.',401,'INVALID_CREDENTIALS');

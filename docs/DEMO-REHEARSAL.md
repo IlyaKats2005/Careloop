@@ -2,12 +2,22 @@
 
 ## Gate before recording
 
-Open **Demo readiness**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Prepare an unused participant/program/period, a Preprod receiving address and a recovery file. Do not consume the final budget slot in rehearsal if you need another new payout for judging.
+Open **Demo readiness**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Do not consume the final budget slot in rehearsal if you need another new payout for judging.
+
+## Four clients and restart
+
+Enter the participant or clinic demo and open **Demo clients**. Alex Morgan, Maya Chen and Noah Bennett are already enrolled; Sam Rivera is registered but has not joined a program. All four have distinct Preprod receiving wallets saved in their profiles. Wallet addresses are public; their recovery keys are kept outside the app source.
+
+Open Sam, choose **Use invitation**, then **Join program** to demonstrate enrollment. Switch to another client to show their separate reports and enrollment state. The clinic workspace shows the whole cohort.
+
+**Restart demo** starts a new private workspace with the original three enrolled clients, Sam awaiting enrollment and no reports. It preserves previous server records, blockchain transactions and private enrollment recovery state. It does not replenish the sponsor wallet or reset the payment allowance.
+
+The website and database are hosted. ZK proofs run in each participant's browser. Until the separate hosting migration is completed, the sponsor payment worker and Masumi service run locally.
 
 ## Successful case
 
-1. Sign in as a participant, join the clinic program, open its check-in.
-2. In the first step, paste or connect the receiving address. Create the private enrollment and download its recovery file. Keep the download out of the recording.
+1. Open Alex, Maya or Noah through **Demo clients**, or enroll Sam first, then open a check-in.
+2. Show the wallet already saved in the profile; there is no address to paste into the form. The demo creates the private enrollment key automatically on first use. Download its recovery file and keep the download out of the recording. Ordinary participant registration asks for a receiving address once and remembers it across logins.
 3. Enter complete fictional answers that agree: taking medication as prescribed, no missed doses, no new symptoms, no impact, able to keep fluids down, no contact requested. Fill the exact questions of the selected program.
 4. Review, consent and submit. Do not click clinic approval.
 5. Show the saved report ID and actual decision. If it goes on hold, show that result and inspect the reason; do not describe it as an automatic pass.
