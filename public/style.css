@@ -136,3 +136,29 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .funding-explainer p{margin:18px 0}.funding-explainer summary{cursor:pointer;font-weight:600}.funding-activity{margin-top:24px}
 @media(max-width:1000px){.funding-panels{grid-template-columns:1fr}.user-actions{flex-wrap:wrap}}
 @media(max-width:550px){.funding-unassigned{align-items:flex-start;flex-direction:column}.funding-unassigned>div:last-child{text-align:left}.clinic-funding .row{align-items:flex-start;gap:12px;flex-wrap:wrap}.funding-breakdown{gap:8px}.funding-breakdown span{font-size:12px}}
+
+/* Keep everyday actions prominent; demo setup and technical details are secondary. */
+.topbar{height:auto;min-height:88px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
+.view-picker{display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap}
+.view-picker select{width:auto;min-width:115px;font-size:13px;padding:8px 28px 8px 10px}
+.user-actions .selected{background:#edf3df;border-color:#819b62}
+.content details>summary{cursor:pointer;font-weight:600;line-height:1.5;color:var(--green)}
+.content details[open]>summary{margin-bottom:14px}
+.payment-details{border-top:1px solid var(--line);padding-top:16px;margin:20px 0}
+.payment-details .actions{flex-wrap:wrap;justify-content:flex-start}
+.restart-card{display:flex;align-items:center;justify-content:space-between;gap:28px;border-color:#e4d4bf;margin-top:28px}
+.restart-card p{max-width:700px;font-size:14px;margin:8px 0}
+.restart-card .btn{flex-shrink:0;border-color:#d6b99a;color:#8a512b}
+.clinic-funding{margin-top:24px}.clinic-funding h2{margin:6px 0}
+.clinic-funding .funding-panels{margin:14px 0;gap:16px}
+.clinic-funding .funding-budget{padding:18px 22px}
+.clinic-funding .funding-budget>.eyebrow{display:none}
+.clinic-funding .funding-budget h2{font-size:17px;margin:0}
+.clinic-funding .funding-remaining{margin:14px 0;gap:8px}
+.clinic-funding .funding-remaining strong{font-size:36px}
+.clinic-funding .funding-remaining span{font-size:14px}
+.clinic-funding .funding-breakdown{padding:12px 0}
+.clinic-funding .funding-breakdown strong{font-size:20px}
+.clinic-funding .funding-cost{font-size:12px;margin:12px 0 0}
+.workflow-status p{margin:6px 0 0}.workflow-status h3{margin:6px 0}
+@media(max-width:720px){.view-picker span{font-size:11px}.restart-card{align-items:flex-start;flex-direction:column;gap:16px}.clinic-funding .funding-panels{grid-template-columns:1fr}.payment-details .steps{flex-wrap:wrap}.payment-details .steps>div{min-width:110px}}

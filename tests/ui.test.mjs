@@ -66,7 +66,7 @@ function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
 async function workspace({backend=service(),session={signedIn:false,user:null},storage=new Map(),browserReload=false}={}){
  const elements=new Map(),storageWrites=[],blockchainCalls=[],cloudRewards=[],ownerChanges=[],proofCalls=[];
  const document={querySelector(selector){if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',style:{},value:'',checked:false,focus(){}});return elements.get(selector)}};
- const window={careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
+ const window={confirm:()=>true,careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
  const sessionStorage={get length(){return storage.size},key:index=>[...storage.keys()][index]??null,getItem:key=>storage.get(key)??null,setItem(key,value){storageWrites.push({key,value});storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
  const context=vm.createContext({document,window,sessionStorage,crypto:{randomUUID},performance:{getEntriesByType:()=>[{type:browserReload?'reload':'navigate'}]},URLSearchParams,location:{search:''},setTimeout:()=>0,clearTimeout:()=>{},fetch:(url,options)=>backend.fetch(url,options,session)});
  const source=readFileSync('public/app.js','utf8');assert.match(source,/render\(\);initialize\(\);\s*$/);
@@ -92,19 +92,19 @@ test('submission waits for the server record, then automatically requests AI wit
  assert.match(ui.html(),/Analysis ready/);assert.equal(ui.data('reports[0].ai.approval'),false);assert.equal(ui.data('reports[0].payment'),'Pending');
  const analysisRequest=backend.requests.find(r=>r.path.endsWith('/analyze'));assert.deepEqual(analysisRequest.body,{});assert.equal(ui.data('rewardState(reports[0]).state'),'waiting');
  await ui.run('submitReport()');assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,1);
- assert.equal(ui.storageWrites.length,0,'Questionnaire data must never be written to browser storage');
+ assert.ok(ui.storageWrites.every(write=>write.key==='careloop-navigation-v1'));for(const write of ui.storageWrites)assert.deepEqual(Object.keys(JSON.parse(write.value)).sort(),['clientId','mode','owner','page','programId','role','selected','workspaceId'],'Only navigation metadata may be stored');
 });
 
 test('a failed server save preserves the form and never shows a saved report or starts AI',async()=>{
  const backend=service();backend.hooks.request=call=>call.path==='/api/data/reports'?Response.json({message:'Database temporarily unavailable.'},{status:503}):undefined;
  const ui=await workspace({backend});await ui.run("enterWorkspace('patient');");ui.run("nav('checkin')");fillReport(ui);const before=ui.data('draft');await ui.run('submitReport()');
- assert.equal(ui.data('reports.length'),0);assert.equal(ui.data('page'),'checkin');assert.deepEqual(ui.data('draft'),before);assert.match(ui.element('#formError').textContent,/Database temporarily unavailable/);assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,0);assert.equal(ui.storageWrites.length,0);
+ assert.equal(ui.data('reports.length'),0);assert.equal(ui.data('page'),'checkin');assert.deepEqual(ui.data('draft'),before);assert.match(ui.element('#formError').textContent,/Database temporarily unavailable/);assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,0);assert.ok(ui.storageWrites.every(write=>write.key==='careloop-navigation-v1'));assert.ok(ui.storageWrites.every(write=>!write.value.includes('Taking as prescribed')));
 });
 
 test('a fresh browser loads saved reports from the server without a local questionnaire cache',async()=>{
  const backend=service(),first=await workspace({backend});await first.run("enterWorkspace('patient')");fillReport(first);await first.run('submitReport()');const saved=first.data('reports[0]');
  const fresh=await workspace({backend,storage:new Map()});assert.equal(fresh.data('reports.length'),0);await fresh.run("enterWorkspace('patient')");
- assert.deepEqual(fresh.data('reports[0]'),saved);assert.equal(fresh.storageWrites.length,0);assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,1,'Reading cloud data must not replay the AI request');
+ assert.deepEqual(fresh.data('reports[0]'),saved);assert.ok(fresh.storageWrites.every(write=>write.key==='careloop-navigation-v1'));assert.ok(fresh.storageWrites.every(write=>!write.value.includes('Taking as prescribed')));assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,1,'Reading cloud data must not replay the AI request');
  backend.state.reports[0].clinical='Reviewed';backend.state.reports[0].decision='Clinic review on another device.';await fresh.run('refreshWorkspace()');assert.equal(fresh.data('reports[0].clinical'),'Reviewed');assert.equal(fresh.data('reports[0].decision'),'Clinic review on another device.');
 });
 
@@ -123,7 +123,7 @@ test('program creation and editing await server persistence, preserve report sna
  assert.equal(ui.data('programId'),'CUSTOM-01-SERVER');assert.equal(backend.requests.find(r=>r.path==='/api/data/programs').method,'POST');
  await ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const original=ui.data('reports[0]');
  await ui.run("switchRole('clinic')");ui.run("editProgram('CUSTOM-01-SERVER')");const changed=programsModule.normalizeProgram({...custom,id:'CUSTOM-01-SERVER',name:'Updated follow-up',symptoms:['Physical discomfort']});fillEditor(ui,changed);await ui.run('saveProgram()');
- assert.equal(ui.data('currentProgram().name'),'Updated follow-up');assert.deepEqual(ui.data('reports[0].programConfig'),original.programConfig);assert.equal(backend.requests.find(r=>r.path==='/api/data/programs/CUSTOM-01-SERVER').method,'PATCH');assert.equal(ui.storageWrites.length,0);
+ assert.equal(ui.data('currentProgram().name'),'Updated follow-up');assert.deepEqual(ui.data('reports[0].programConfig'),original.programConfig);assert.equal(backend.requests.find(r=>r.path==='/api/data/programs/CUSTOM-01-SERVER').method,'PATCH');assert.ok(ui.storageWrites.every(write=>write.key==='careloop-navigation-v1'));assert.ok(ui.storageWrites.every(write=>!write.value.includes('Taking as prescribed')));
 });
 
 test('AI errors retain the server report and support a retry while review and rewards remain independent',async()=>{
@@ -143,7 +143,7 @@ test('examples stay read-only, blockchain navigation receives safe state, and wa
  ui.run("nav('blockchain')");assert.match(ui.html(),/Blockchain lab fixture/);assert.equal(ui.blockchainCalls.at(-1).live.network,'Preprod');assert.equal(ui.blockchainCalls.at(-1).live.secret,undefined);
  await ui.run("switchRole('patient')");fillReport(ui);await ui.run('submitReport()');const id=ui.data('reports[0].id');
  await ui.run(`window.careloopSaveChain(${JSON.stringify(id)},{kind:'claim',txHash:'${'a'.repeat(64)}'})`);assert.equal(ui.data('reports[0].chain.claim.verified'),false);assert.equal(ui.data('reports[0].payment'),'Pending');assert.notEqual(ui.data('rewardState(reports[0]).state'),'confirmed');
- assert.equal(ui.storageWrites.length,0);
+ assert.ok(ui.storageWrites.every(write=>write.key==='careloop-navigation-v1'));assert.ok(ui.storageWrites.every(write=>!write.value.includes('Taking as prescribed')));
 });
 
 test('missing responses or fictional-data consent cannot create a server record',async()=>{
@@ -167,11 +167,11 @@ test('approved live submission automatically sends a public proof, then shows pa
  assert.equal(backend.requests.find(r=>r.path==='/api/data/reports').body.recipientAddress,undefined);
  assert.equal(ui.proofCalls.length,1);const proof=backend.requests.find(r=>r.path.endsWith('/proof'));assert.deepEqual(proof.body,{proof:{pi_a:['test']},publicSignals:['public']});assert.equal(proof.body.secret,undefined);
  assert.match(ui.html(),/Claim queued/);assert.doesNotMatch(ui.html(),/Paid · 2 test ADA/);
- const report=backend.state.reports[0];report.payout.state='submitted';report.payout.claimTxHash='a'.repeat(64);await ui.run('pollPayout(payoutWatch)');assert.match(ui.html(),/claim has been broadcast/);assert.equal(ui.data('rewardState(reports[0]).state'),'submitted');
+ const report=backend.state.reports[0];report.payout.state='submitted';report.payout.claimTxHash='a'.repeat(64);await ui.run('pollPayout(payoutWatch)');assert.match(ui.html(),/Your payment has been sent/);assert.equal(ui.data('rewardState(reports[0]).state'),'submitted');
  report.payout.state='confirmed';report.payout.receipt={verified:false,recipientAddress:'addr_test1fixture',txHash:'a'.repeat(64),amount:'2000000',network:'Preprod'};await ui.run('pollPayout(payoutWatch)');assert.notEqual(ui.data('rewardState(reports[0]).state'),'confirmed');
  report.payout.receipt={verified:true,recipientAddress:'addr_test1other',txHash:'a'.repeat(64),amount:'2000000',network:'Preprod'};await ui.run('pollPayout(payoutWatch)');assert.notEqual(ui.data('rewardState(reports[0]).state'),'confirmed');
  report.payout.receipt.recipientAddress='addr_test1fixture';await ui.run('pollPayout(payoutWatch)');assert.equal(ui.data('rewardState(reports[0]).state'),'confirmed');assert.match(ui.html(),/Paid · 2 test ADA/);assert.match(ui.html(),new RegExp('/transaction/'+'a'.repeat(64)));
- assert.equal(ui.proofCalls.length,1,'A queued or confirmed claim must not regenerate a proof');assert.equal(ui.storageWrites.length,0);
+ assert.equal(ui.proofCalls.length,1,'A queued or confirmed claim must not regenerate a proof');assert.ok(ui.storageWrites.every(write=>write.key==='careloop-navigation-v1'));assert.ok(ui.storageWrites.every(write=>!write.value.includes('Taking as prescribed')));
 });
 
 test('a held report shows its real reason and cannot initiate a sponsored claim',async()=>{
@@ -200,9 +200,9 @@ test('missing recipient stops submission before spending sponsor funds',async()=
 
 test('demo readiness distinguishes an unreachable service and previous receipts from a fresh payment',async()=>{
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('demoReady')");await tick();
- assert.match(ui.html(),/Sponsor payment worker: Online/);assert.match(ui.html(),/does not create another Masumi purchase/);assert.match(ui.html(),/Previous website payout/);
+ assert.match(ui.html(),/Sponsor payment service: Online/);assert.match(ui.html(),/does not create another Masumi purchase/);assert.match(ui.html(),/Previous website payout/);
  backend.hooks.request=call=>{if(call.path==='/api/sponsor/status')throw Error('network unavailable');};
- await ui.run('loadSponsorStatus()');assert.match(ui.html(),/Connection not verified/);assert.doesNotMatch(ui.html(),/Sponsor payment worker: Online/);
+ await ui.run('loadSponsorStatus()');assert.match(ui.html(),/Connection not verified/);assert.doesNotMatch(ui.html(),/Sponsor payment service: Online/);
  assert.equal(backend.requests.filter(r=>r.method==='POST'&&r.path!=='/api/demo/start').length,0);
 });
 
@@ -253,8 +253,8 @@ test('four-client UI supports enrolling Sam and restarting against the real work
   const response=await dataAPI(new Request('https://careloop.test'+url,{method:options.method||'GET',headers:{Cookie:cookie,Origin:'https://careloop.test','Content-Type':'application/json','cf-connecting-ip':'ui-demo-cohort'},...(options.body?{body:options.body}:{})}),{DB},{analyze:async()=>({status:200,body:goodAnalysis})});
   assert.ok(response,'Known API route');const set=response.headers.get('set-cookie');if(set)cookie=set.split(';')[0];return response;
  }};
- const ui=await workspace({backend});await ui.run("enterWorkspace('clinic')");assert.match(ui.html(),/Demo participants/);assert.match(ui.html(),/Sam Rivera/);
- ui.run("nav('demoClients')");assert.match(ui.html(),/3 enrolled · 1 awaiting enrollment/);assert.match(ui.html(),/Restart demo/);
+ const ui=await workspace({backend});await ui.run("enterWorkspace('clinic')");assert.match(ui.html(),/Participants/);assert.match(ui.html(),/Sam Rivera/);
+ ui.run("nav('demoClients')");assert.match(ui.html(),/3 enrolled · 1 awaiting enrollment/);assert.doesNotMatch(ui.html(),/onclick="restartDemo/);ui.run("nav('demoTools')");assert.match(ui.html(),/Restart demo/);
  await ui.run("selectDemoClient('sam')");assert.match(ui.html(),/Join your first program/);assert.match(ui.html(),/Sam Rivera · Wallet saved at registration/);
  assert.match(ui.ownerChanges.at(-1),/:sam$/);assert.equal(ui.data('reports.length'),0);
  const id=ui.data('availablePrograms[0].id');ui.run(`useDemoInvitation(${JSON.stringify(id)})`);await ui.run('joinProgram()');assert.equal(ui.data('programs.length'),1);assert.match(ui.html(),/You’re enrolled/);
@@ -262,19 +262,24 @@ test('four-client UI supports enrolling Sam and restarting against the real work
  assert.equal(ui.data('reports[0].recipientAddress'),ui.data('profile.recipientAddress'));
  await ui.run("selectDemoClient('maya')");assert.equal(ui.data('reports.length'),0);assert.match(ui.ownerChanges.at(-1),/:maya$/);
  await ui.run("selectDemoClient('sam')");assert.equal(ui.data('reports.length'),1);
- const oldWorkspace=ui.data('cloudWorkspace.id');await ui.run('restartDemo()');assert.notEqual(ui.data('cloudWorkspace.id'),oldWorkspace);assert.equal(ui.data('demoClientId'),'alex');assert.equal(ui.data('reports.length'),0);
+ const oldWorkspace=ui.data('cloudWorkspace.id');
+ ui.run(`openReport(${JSON.stringify(ui.data('reports[0].id'))})`);
+ const beforeReload=ui.data('selected'),resumed=await workspace({backend,storage:ui.storage,browserReload:true});
+ assert.equal(resumed.data('cloudWorkspace.id'),oldWorkspace);assert.equal(resumed.data('demoClientId'),'sam');assert.equal(resumed.data('selected'),beforeReload);assert.equal(resumed.data('page'),'reportDetail');assert.equal(resumed.data('reports.length'),1);
+ const beforeCancel=requests.length;ui.run('window.confirm=()=>false');await ui.run('restartDemo()');assert.equal(requests.length,beforeCancel);assert.equal(ui.data('cloudWorkspace.id'),oldWorkspace);
+ ui.run('window.confirm=()=>true');await ui.run('restartDemo()');assert.notEqual(ui.data('cloudWorkspace.id'),oldWorkspace);assert.equal(ui.data('demoClientId'),'alex');assert.equal(ui.data('reports.length'),0);
  assert.equal(ui.data('demoClients.filter(c=>c.enrolledProgramIds.length).length'),3);
  assert.equal(await DB.prepare('SELECT count(*) AS n FROM care_reports').first('n'),1);
  assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
  const fresh=await workspace({backend,storage:ui.storage});await fresh.run("enterWorkspace('patient')");assert.equal(fresh.data('cloudWorkspace.id'),ui.data('cloudWorkspace.id'));assert.equal(fresh.data('demoClientId'),'alex');
  await fresh.run("switchRole('sponsor')");assert.match(fresh.html(),/Your AI and client budgets/);assert.match(fresh.html(),/data-budget="ai"/);assert.match(fresh.html(),/data-budget="rewards"/);assert.match(fresh.html(),/fundingAmount-ai/);assert.match(fresh.html(),/fundingAmount-rewards/);assert.equal(fresh.data('funding.available'),750);
  fresh.run("fundingAmounts.rewards=25");await fresh.run("allocateCredits('reserve','rewards')");assert.equal(fresh.data('funding.available'),725);assert.equal(fresh.data('funding.clinic.rewards'),225);assert.equal(fresh.data('funding.clinic.ai'),50);
- await fresh.run("switchRole('clinic')");assert.match(fresh.html(),/Ready to fund care/);assert.equal(fresh.data('funding.clinic.rewards'),225);
+ await fresh.run("switchRole('clinic')");assert.match(fresh.html(),/Available credits/);assert.equal(fresh.data('funding.clinic.rewards'),225);
  const sponsorTab=await workspace({backend});await sponsorTab.run("enterWorkspace('sponsor')");sponsorTab.run("fundingAmounts.ai=20");await sponsorTab.run("allocateCredits('reserve','ai')");
  await fresh.run('loadFunding()');assert.equal(fresh.data('funding.clinic.ai'),70);assert.equal(fresh.data('funding.available'),705);assert.equal(fresh.data('funding.clinic.rewards'),225);
- const beforeRefresh=fresh.data('cloudWorkspace.id');await fresh.run('refreshDemoOrWorkspace()');assert.notEqual(fresh.data('cloudWorkspace.id'),beforeRefresh);assert.equal(fresh.data('funding.available'),750);assert.equal(fresh.data('funding.clinic.rewards'),200);
- const reloaded=await workspace({backend,storage:fresh.storage,browserReload:true});await reloaded.run("enterWorkspace('clinic')");assert.notEqual(reloaded.data('cloudWorkspace.id'),fresh.data('cloudWorkspace.id'));assert.equal(reloaded.data('funding.available'),750);assert.equal(reloaded.data('reports.length'),0);
- assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,3);
+ const beforeRefresh=fresh.data('cloudWorkspace.id');await fresh.run('refreshWorkspace()');assert.equal(fresh.data('cloudWorkspace.id'),beforeRefresh);assert.equal(fresh.data('funding.available'),705);assert.equal(fresh.data('funding.clinic.rewards'),225);assert.equal(fresh.data('funding.clinic.ai'),70);
+ const reloaded=await workspace({backend,storage:fresh.storage,browserReload:true});assert.equal(reloaded.data('role'),'clinic');assert.equal(reloaded.data('page'),'queue');assert.equal(reloaded.data('cloudWorkspace.id'),fresh.data('cloudWorkspace.id'));assert.equal(reloaded.data('funding.available'),705);assert.equal(reloaded.data('funding.clinic.rewards'),225);assert.equal(reloaded.data('funding.clinic.ai'),70);assert.equal(reloaded.data('reports.length'),0);
+ assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
 });
 
 test('an automatically approved report hides clinic approval controls and explains the sponsor limit',async()=>{
@@ -292,4 +297,30 @@ test('clinic approval controls remain available to resolve an actual answer hold
  const backend=service();livePolicy(backend,'on_hold');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
  const id=backend.state.reports[0].id;await ui.run("switchRole('clinic')");ui.run(`openReport(${JSON.stringify(id)})`);
  assert.match(ui.html(),/Automatic approval is on hold/);assert.match(ui.html(),/Approve after clarification/);assert.match(ui.html(),/id="eligible"/);
+});
+
+
+test('Refresh keeps the current check-in and answers while fetching new server status',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");
+ ui.run("changeProgram('WELL-01');nav('checkin')");fillReport(ui);ui.run('step=2;render()');
+ const before=ui.data('({page,programId,step,draft,workspace:cloudWorkspace.id})'),writes=backend.requests.filter(r=>r.method==='POST').length;
+ assert.match(ui.html(),/onclick="refreshWorkspace\(\)"/);assert.doesNotMatch(ui.html(),/onclick="restartDemo\(\)"|Blockchain lab|Demo readiness/);
+ await ui.run('refreshWorkspace()');
+ assert.deepEqual(ui.data('({page,programId,step,draft,workspace:cloudWorkspace.id})'),before);
+ assert.equal(backend.requests.filter(r=>r.method==='POST').length,writes);
+ const reloaded=await workspace({backend,storage:ui.storage,browserReload:true});
+ assert.equal(reloaded.data('programId'),'WELL-01');assert.equal(reloaded.data('page'),'checkin');assert.equal(reloaded.data('cloudWorkspace.id'),before.workspace);
+ assert.equal(backend.requests.filter(r=>r.path==='/api/demo/restart').length,0);
+});
+
+test('reload restores an account screen and leaving it does not silently reopen the previous demo',async()=>{
+ const backend=service(),session={signedIn:true,user:{id:'clinic-owner',displayName:'Clinic',role:'clinic'}};
+ const ui=await workspace({backend,session});ui.run("changeProgram('WELL-01');nav('rewards')");
+ const reloaded=await workspace({backend,session,storage:ui.storage,browserReload:true});
+ assert.equal(reloaded.data('workspaceMode'),'account');assert.equal(reloaded.data('role'),'clinic');assert.equal(reloaded.data('page'),'rewards');assert.equal(reloaded.data('programId'),'WELL-01');
+ assert.equal(backend.requests.filter(r=>r.path==='/api/demo/start'||r.path==='/api/demo/restart').length,0);
+ await reloaded.run("enterWorkspace('sponsor','demo')");reloaded.run('showLogin()');
+ assert.equal(reloaded.storage.has('careloop-navigation-v1'),false);
+ const signedInAgain=await workspace({backend,session,storage:reloaded.storage,browserReload:true});assert.equal(signedInAgain.data('workspaceMode'),'account');
+ await signedInAgain.run('signOut()');assert.equal(signedInAgain.storage.has('careloop-navigation-v1'),false);
 });

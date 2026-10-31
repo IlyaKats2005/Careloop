@@ -59,7 +59,7 @@ Create a clinic account and copy a program's invitation code. Create a participa
 
 ## Demo operations
 
-Open **Sponsor** to reserve or release the clinic's AI and client reward budgets. Each new demo starts with 1,000 app credits: 750 unallocated, 200 for rewards and 50 for AI. Clinic balances and funding activity update automatically. **Refresh** and **Restart demo** restore those starting balances and the three-enrolled/one-unenrolled cohort. A browser reload starts a fresh run when entering the demo again; signed-in account history is preserved. These app credits are separate from real test ADA, model-provider billing and the live payment allowance, which are not reset.
+Open **Sponsor** to reserve or release the clinic's AI and client reward budgets. Each new demo starts with 1,000 app credits: 750 unallocated, 200 for rewards and 50 for AI. Clinic balances and funding activity update automatically. **Refresh** updates the current reports and balances without resetting the run. A browser reload resumes the same workspace, participant, program and saved report. Only **Demo tools → Restart demo**, after confirmation, restores the starting balances and the three-enrolled/one-unenrolled cohort. Navigation is stored for this tab; questionnaire drafts remain in memory only. These app credits are separate from real test ADA, model-provider billing and the live payment allowance, which are not reset.
 
 Open **Demo readiness** in the app to check the sponsor heartbeat and remaining budget. Check-in now includes enrollment creation and private recovery controls before submission. The screen labels the separate Masumi service and prior receipts explicitly.
 
