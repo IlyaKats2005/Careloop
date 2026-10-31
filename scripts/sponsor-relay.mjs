@@ -12,7 +12,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const resolve=value=>path.resolve(root,value);
 const directory=resolve(process.env.SPONSOR_STATE_DIR||'.local/sponsor-relay');
 const statePath=path.join(directory,'journal.json'),lockPath=path.join(directory,'relay.lock');
-const site=new URL(process.env.SPONSOR_SITE_URL||'http://localhost:8789');
+const site=new URL(process.env.SPONSOR_SITE_URL||'http://localhost:8787');
 if(site.protocol!=='https:'&&!(site.protocol==='http:'&&['localhost','127.0.0.1'].includes(site.hostname)))throw Error('Use HTTPS for the sponsored-payment service.');
 if(site.pathname!=='/'||site.search||site.hash||site.username||site.password)throw Error('SPONSOR_SITE_URL must be a bare site origin.');
 const token=process.env.SPONSOR_RELAY_TOKEN||'';

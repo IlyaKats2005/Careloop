@@ -8,28 +8,39 @@ It is separate from the participant reward relay. The hosted website does not in
 
 Adapted from the [official TUM quickstart](https://github.com/masumi-network/tum-hackathon-quickstart), with Careloop's direct Gemini questionnaire client, strict input/evidence checks, payment identity checks, seller-net receipt verification, journal recovery and worker locking. Upstream provenance is retained here. The unused Eve/team-name assistant is not required by this adaptation and is not bundled.
 
-- Node.js **24+**.
+- Node.js **24.5+**.
 - Install the root Careloop dependencies with `npm ci`.
 - For the Coworker worker: Sokosumi CLI **1.0.4**, on `PATH`, using its supported runtime credential vault.
-- A Gemini API key, your own Sokosumi Preprod account and Personal Workspace, and test credits for Coworker Tasks.
+- A Gemini API key. Only the Coworker route needs a Sokosumi Preprod account, Personal Workspace and Task credits.
 - For payment: your own Masumi Payment Service with a dedicated database, encryption key, seller wallet and Preprod payment source; test ADA and test USDM; a Blockfrost Preprod key to independently check settlement.
 
 There are no additional dependencies in this directory. Pin the CLI version: this integration imports its runtime modules and is not guaranteed compatible with another version.
 
-## Configure an execution-only Coworker
+## Common configuration
 
-From the repository root:
+Complete this for either the Standard API or Coworker route. From your cloned repository:
 
 ```sh
 npm ci
-npm install --global @masumi_network/sokosumi@1.0.4
-sokosumi --version
-sokosumi skills
 cd integrations/masumi
 cp .env.example .env
 chmod 600 .env
 mkdir -p .local docs
 chmod 700 .local
+```
+
+Set your own `GEMINI_API_KEY` in this integration's `.env`. This file is separate from the root app's `.env`. If the files already exist, edit them instead of copying over them.
+
+For the **paid Standard API job**, continue directly to [Prepare the separate paid service](#prepare-the-separate-paid-service). No Sokosumi CLI, account or Coworker is required for that route.
+
+## Optional: configure an execution-only Coworker
+
+Only for the Coworker route:
+
+```sh
+npm install --global @masumi_network/sokosumi@1.0.4
+sokosumi --version
+sokosumi skills
 ```
 
 Follow the [official account/Coworker setup guide](https://www.masumi.network/tum-hackathon/agent-guide.md) using your own Preprod account and Personal Workspace. Reuse existing resources when resuming. Set the returned `COWORKER_ID` and private `GEMINI_API_KEY` in `.env`; leave `PAID_TASKS_ENABLED=false` for the first execution test.
@@ -58,7 +69,7 @@ Save the returned Task ID and inspect the completed result. Input may be raw JSO
 
 Read the official [Masumi Payment Service setup](https://github.com/masumi-network/masumi-payment-service) and the [TUM payment instructions](https://github.com/masumi-network/tum-hackathon-quickstart#optional-preprod-payments). The event requires a qualifying paid job even though the tutorial makes payment optional for initial setup.
 
-Provision your own dedicated MPS instance, database, encryption secret, selling wallet and Preprod source. Save its admin key only in private `.local/mps.env`; set file permission `600`. No account, wallet, source or registration IDs are supplied in this repository.
+Provision your own dedicated MPS instance, database, encryption secret, selling wallet and Preprod source. Save its admin key as `ADMIN_KEY=your_private_admin_key` in private `.local/mps.env`; set file permission `600`. Replace the placeholder with your own MPS key in an editor. No account, wallet, source or registration IDs are supplied in this repository.
 
 Save your own MPS response fields in **ignored** `docs/payment-state.json`:
 

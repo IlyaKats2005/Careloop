@@ -16,16 +16,47 @@ The sponsor allocates separate budgets for AI analysis and participant rewards. 
 
 Use **Try participant demo**, **Try clinic demo**, or **Try sponsor demo**. In the demo, **View as** switches roles. **Demo tools → Choose participant** offers Alex, Maya and Noah already enrolled, and Sam registered with a wallet but awaiting enrollment. Wallet addresses are saved in their profiles; they do not need to enter an address for each report.
 
-The website, database and ordinary Gemini analysis are hosted. **Participant payments still require the sponsor relay to run on the operator's computer.** On Ilya's already configured Mac, run this only if the relay is not already running:
+The public demo runs its website, database and ordinary Gemini analysis online. Visitors do not need Terminal or access to the original developer's computer. **Live rewards require the demo operator's funded sponsor relay to be online.** Use **Demo tools → Check payment service → Check service** to inspect its status; a queued reward is not a confirmed payment.
+
+For an independent installation, use the fresh-clone instructions below. They create your own local database, relay token and disposable sponsor wallet. No original developer credentials or private files are needed. The optional [Masumi paid AI service](integrations/masumi/README.md) has its own setup.
+
+## Quick start on your own computer
+
+Requirements: Git, npm and **Node.js 24.5+** (tested with Node 26). From any directory where you keep projects:
 
 ```sh
-cd "$HOME/.codex/.chatgpt-projects/g-p-6ac89d8629088191afb47e3bffebeb7f/sites/careloop"
-node --use-env-proxy --env-file=.local/sponsor-relay.env scripts/sponsor-relay.mjs
+git clone https://github.com/IlyaKats2005/Careloop.git
+cd Careloop
+npm ci
+npm run setup
 ```
 
-Leave that process running and the computer awake and connected. In the participant browser, keep **My rewards**, **My reports**, or the submitted report open so its private proof can be generated. The preconfigured `.local/sponsor-relay.env` is private and is not included in a GitHub clone. A fresh installation needs the configuration below and in [the run guide](docs/RUNNING.md).
+Open the generated `.env` in your editor and set **your own `GEMINI_API_KEY`**. Then:
 
-**You do not need PostgreSQL, the Masumi Payment Service or the Masumi agent for the normal website → participant reward flow.** Those services are only needed to demonstrate the separate paid AI job. Cloud worker deployment files are included, but an always-on cloud relay has not been provisioned.
+```sh
+npm run build
+npm run dev
+```
+
+Open **http://localhost:8787**. Choose a demo role to try registration, enrollment, questionnaires, clinic review and sponsor budgets. `npm run dev` loads `.env`; local records persist in `.local/dev-data.sqlite`. No PostgreSQL or hosted Careloop account is needed.
+
+`npm run setup` generates a random relay token and an **unfunded** Preprod sponsor wallet, prints only its public receiving address, and leaves existing configuration untouched if rerun. Configuration and wallet files are ignored by Git. Without a model key, the interface can be explored but real AI analysis cannot complete. Without a funded relay, no testnet reward is paid.
+
+To run **real participant payments**, follow [funding and relay setup](docs/RUNNING.md#enable-real-preprod-rewards), then run these from a second terminal in the same clone:
+
+```sh
+npm run relay:check
+npm run relay
+```
+
+To check the reward contracts and real ZK proofs **without API keys, a funded wallet or network payments**:
+
+```sh
+npm test
+npm run test:masumi
+```
+
+The application tests include a real Groth16 proof and serialized Plutus contract execution in the Lucid emulator. Masumi tests use fixtures; reproducing an actual paid AI job requires [your own Masumi setup](integrations/masumi/README.md). See [the full run guide](docs/RUNNING.md) for account setup, wallet funding, troubleshooting and optional hosting.
 
 ## The real workflow
 
@@ -62,29 +93,6 @@ The broader product goal is for participants to see a clinic's sponsor allocatio
 
 The hosted questionnaire currently uses the configured Gemini API directly. It does **not** purchase a Masumi job for every form. The separate, reproducible [Masumi integration](integrations/masumi/README.md) demonstrates the qualifying paid agent service.
 
-## Run the app locally
-
-Requirements: Node.js **24+**, npm and Git.
-
-```sh
-git clone https://github.com/IlyaKats2005/Careloop.git
-cd Careloop
-npm ci
-cp .env.example .env
-chmod 600 .env
-```
-
-Edit the private `.env`: set `GEMINI_API_KEY`, keep `AI_PROVIDER=gemini` and `AI_MODEL=gemini-2.5-flash`. The API key is server-only. To use OpenRouter instead, set `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY` and an available model identifier.
-
-```sh
-npm run build
-node --use-env-proxy --env-file=.env scripts/dev.mjs
-```
-
-Open the printed URL, normally http://localhost:8787. Use `CARELOOP_PORT=8789` to select another port. Node's SQLite backs local accounts, reports and programs at ignored `.local/dev-data.sqlite`; restarting the server preserves them. Hosted deployments use Cloudflare D1 with schema migrations under `drizzle/`.
-
-Create a clinic account and copy a program's invitation code. Create a participant account and join with that code, or use a private guest demo to explore both roles. Authentication uses ordinary email/password accounts. Accounts and invitation codes are demo access controls; they do not verify professional credentials or patient identity.
-
 ## Demo operations
 
 Open **Sponsor** to reserve or release the clinic's AI and client reward budgets. Each new demo starts with 1,000 app credits: 750 unallocated, 200 for rewards and 50 for AI. Clinic balances and funding activity update automatically. **Refresh** updates the current reports and balances without resetting the run. A browser reload resumes the same workspace, participant, program and saved report. Only **Demo tools → Restart demo**, after confirmation, restores the starting balances and the three-enrolled/one-unenrolled cohort. Navigation is stored for this tab; questionnaire drafts remain in memory only. These app credits are separate from real test ADA, model-provider billing and the live payment allowance, which are not reset.
@@ -96,35 +104,11 @@ Open **Demo tools → Check payment service → Check service** to check the spo
 
 ## Run the sponsor relay
 
-The public website persists reports and the relay queue. The relay is a separate operator process that signs **Preprod-only** transactions with a dedicated sponsor wallet. It makes authenticated outbound requests; it needs no public inbound port or tunnel. For this hackathon the operator may run it on their computer, which must remain awake and connected.
+The relay is the sponsor's signing process. For a local installation, the generated `.env` points to **your own app at `http://localhost:8787`**, with the same private relay token used by the local API. No access to the shared live demo is required. [The run guide](docs/RUNNING.md#enable-real-preprod-rewards) covers funding, separate collateral, existing wallets and deployment to your own host.
 
-Use a dedicated wallet with disposable Preprod ADA, never a mainnet wallet. Prepare a private seed file and, optionally, a private Blockfrost Preprod project-key file. Put their paths in `.env`; do not paste secrets into commands or commit the files. The example configuration includes:
+Keep one relay running for the wallet and preserve `.local/sponsor-relay/` across restarts. It contains signed transaction journals used to reconcile uncertain submissions. `npm run relay:check` reads wallet and server status without sending transactions; it does not simulate a spend or guarantee sufficient collateral. `npm run relay` processes approved jobs and can spend disposable Preprod assets. The participant keeps My rewards, My reports or the report open until its browser-generated proof has been sent.
 
-```dotenv
-SPONSOR_SITE_URL=https://careloop-study-prototype.perasperaadastra3008.chatgpt.site
-SPONSOR_RELAY_TOKEN=
-SPONSOR_SEED_FILE=
-SPONSOR_BLOCKFROST_KEY_FILE=
-SPONSOR_STATE_DIR=.local/sponsor-relay
-SPONSOR_MAX_JOBS=4
-SPONSOR_MAX_SPEND_ADA=100
-```
-
-Set the same strong relay token in the hosted server environment and the relay's private `.env`. Keep it out of client JavaScript. Obtain free test ADA from the [Cardano Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/). The default four-job budget needs approximately 100 test ADA, with extra liquidity/collateral useful for the wallet. The relay uses public Koios if no Blockfrost key file is configured.
-
-The existing operator setup was raised to **10 jobs / 250 test ADA**. A fresh clone's example deliberately starts at **4 jobs / 100 test ADA**. Both the server allowance and relay limits apply; restarting the demo does not reset either. For a completely local app, set `SPONSOR_SITE_URL=http://localhost:8787` so the relay polls the local server rather than the hosted demo.
-
-```sh
-# Read-only readiness check: does not submit transactions.
-node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs --check
-
-# Start the bounded relay. This command can submit Preprod transactions.
-node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs
-```
-
-Keep `.local/sponsor-relay` across restarts. It contains transaction journals used to reconcile uncertain submissions. Do not delete journals and blindly retry: an already submitted transaction may still confirm. `--once` performs one poll and **can transact**; it is not a dry run. If the relay stops or its budget runs out, the app must show waiting/error status rather than a simulated payment.
-
-Each approved report currently gets a separate experimental pool. A pool starts with 20 test ADA; a claim pays 2 test ADA and leaves 18. There is no refund/close path. Budget for those locked funds; this is not an efficient production pool design.
+The example allows **4 jobs / 100 test ADA**. Both the server job allowance and relay spending limits apply. Restarting the demo only resets app data and app credits. Each report currently receives a separate 20-test-ADA pool; one claim pays 2 and leaves 18. There is no refund/close path. These locked funds and fees require real testnet liquidity independently of the app's displayed credits.
 
 ## Data and privacy
 

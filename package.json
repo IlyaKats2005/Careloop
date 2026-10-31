@@ -3,8 +3,12 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24.5.0"
+  },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "setup": "node scripts/setup-local.mjs",
+    "dev": "node --use-env-proxy --env-file=.env scripts/dev.mjs",
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
     "zk:setup": "node scripts/zk-setup.mjs",

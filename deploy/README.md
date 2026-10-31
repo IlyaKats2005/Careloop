@@ -4,7 +4,7 @@ This package runs the existing Preprod sponsor relay on an always-on Linux machi
 
 ## Preserve the existing payment history
 
-1. Stop the existing Mac relay gracefully. Do not run two copies with the same sponsor wallet or journal.
+1. Stop the existing relay process gracefully. Do not run two copies with the same sponsor wallet or journal.
 2. Transfer the complete `.local/sponsor-relay/` directory privately to the host. Keep `journal.json`; it preserves the signed bytes and confirmed transactions. Never reset it to recover an uncertain payment.
 3. After verifying the old process is stopped, remove its obsolete `relay.lock` from the migrated copy. Do not remove a lock while any worker is running.
 4. Transfer the dedicated Preprod seed and Blockfrost key into a private directory as `seed.txt` and `blockfrost.key`, each mode 600. Both directories must belong to the UID/GID used by the service. Do not commit or include them in the Docker build context.

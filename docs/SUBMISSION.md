@@ -103,16 +103,16 @@ The Masumi tutorial calls payments optional for initial setup. The event's Carda
 
 | Requirement | Prepared evidence / status |
 | --- | --- |
-| Public source repository | GitHub's unauthenticated API confirms `IlyaKats2005/Careloop` is public. Latest local changes still require an authenticated push. |
-| Setup and run instructions | [README](../README.md), [exact operator and fresh-clone commands](RUNNING.md), and [Masumi setup](../integrations/masumi/README.md). |
+| Public source repository | GitHub's unauthenticated API confirms `IlyaKats2005/Careloop` is public. Use the repository commit history to confirm the version being reviewed. |
+| Setup and run instructions | [README](../README.md), [independent fresh-clone setup](RUNNING.md), and [Masumi setup](../integrations/masumi/README.md). |
 | Detailed project description | [Copy-ready Devfolio text](DEVFOLIO.md), including problem, customer, business case, implementation, tools, challenges and real-use plan. |
 | Completed paid service on Cardano Preprod | Completed Masumi Standard API job and independently rechecked 1-test-USDM seller receipt in [the evidence package](evidence/README.md). |
 | Transaction hash and explorer link | Paid-job hash and URL are in the description and evidence; participant reward links are separately labeled. |
-| Code and behavior validation | An isolated checkout passed `npm ci`, `npm run build`, 216 application tests and 30 Masumi integration tests on Node 26.7.0. Its local web server and the public app returned HTTP 200. Public evidence hashes are reproducible without keys. |
+| Code and behavior validation | An isolated source copy passed `npm ci`, `npm run setup`, `npm run build`, 218 application tests, 30 Masumi tests, 13 Aiken checks and standalone real-proof tampering checks on Node 26.7.0. Its local server loaded the generated configuration and created a SQLite-backed account/session without developer credentials. Public evidence hashes are reproducible without keys. |
 | Prior-work disclosure | [Build history](BUILD-HISTORY.md) identifies the static prototype from 29 October and the substantial extensions recorded on 30–31 October. Eligibility is determined by the organizers. |
 | Team and attendance | The event is in person, with teams of up to five. Actual registered members and attendance must match the signed-in Devfolio team; this repository does not verify them. |
 | Video within the event's limit | Explicitly excluded from this preparation at the project owner's request. No finished video or public video URL is claimed. |
-| Devfolio submission | Content and links are prepared. The signed-in project form has not been saved/submitted through this handoff, and no submission confirmation is claimed. |
+| Devfolio submission | The team dashboard shows an existing Careloop project marked **IN DRAFT**. The current account cannot edit it; the team admin must complete and publish it. No successful submission is claimed. |
 | Live judging | Keep the sponsor relay running and the participant browser available for proof generation; [run guide](RUNNING.md). |
 
 The public event pages do not expose the user's signed-in Devfolio form, so account-specific required fields and the final submission receipt must be checked there. Video is still an event requirement even though its preparation is excluded here.
@@ -124,7 +124,7 @@ All prepared source and documentation should be committed before running this bl
 ```sh
 (
   set -e
-  cd "$HOME/.codex/.chatgpt-projects/g-p-6ac89d8629088191afb47e3bffebeb7f/sites/careloop"
+  # Run from the root of your cloned Careloop repository.
   gh auth status >/dev/null 2>&1 || gh auth login --hostname github.com --git-protocol https --web
   gh auth setup-git
   git push https://github.com/IlyaKats2005/Careloop.git main
