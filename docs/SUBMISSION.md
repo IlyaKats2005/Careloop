@@ -4,6 +4,7 @@
 
 - App: https://careloop-study-prototype.perasperaadastra3008.chatgpt.site
 - GitHub repository: https://github.com/IlyaKats2005/Careloop
+- Recorded demo: [Careloop-Demo.mp4 — 2:28](demo/Careloop-Demo.mp4), with [publishing instructions](demo/README.md)
 - Reproduction: [README](../README.md), [local-service instructions](RUNNING.md), [live demonstration](LIVE-DEMO.md), [paid Masumi agent](../integrations/masumi/README.md)
 - Precise blockchain rationale, payment flow and privacy boundaries: [architecture](ARCHITECTURE.md)
 - Copy-ready project description and complete link table: [DEVFOLIO.md](DEVFOLIO.md)
@@ -111,11 +112,11 @@ The Masumi tutorial calls payments optional for initial setup. The event's Carda
 | Code and behavior validation | An isolated source copy passed `npm ci`, `npm run setup`, `npm run build`, 218 application tests, 30 Masumi tests, 13 Aiken checks and standalone real-proof tampering checks on Node 26.7.0. Its local server loaded the generated configuration and created a SQLite-backed account/session without developer credentials. Public evidence hashes are reproducible without keys. |
 | Prior-work disclosure | [Build history](BUILD-HISTORY.md) identifies the static prototype from 29 October and the substantial extensions recorded on 30–31 October. Eligibility is determined by the organizers. |
 | Team and attendance | The event is in person, with teams of up to five. Actual registered members and attendance must match the signed-in Devfolio team; this repository does not verify them. |
-| Video within the event's limit | Explicitly excluded from this preparation at the project owner's request. No finished video or public video URL is claimed. |
-| Devfolio submission | The team dashboard shows an existing Careloop project marked **IN DRAFT**. The current account cannot edit it; the team admin must complete and publish it. No successful submission is claimed. |
+| Video within the event's limit | [Recorded demo](demo/Careloop-Demo.mp4): 148.002 seconds, H.264/AAC, full-file decode verified. The complete 276.732-second recording was accelerated approximately 1.87× with audio pitch preserved. Upload it and add its actual hosted URL to Devfolio. |
+| Devfolio submission | Last verified dashboard state: existing Careloop project **IN DRAFT**, with editing restricted to the team admin. Final publication remains unverified. Authenticate as the team admin, update the existing project, publish it and check for **Submitted**. |
 | Live judging | Keep the sponsor relay running and the participant browser available for proof generation; [run guide](RUNNING.md). |
 
-The public event pages do not expose the user's signed-in Devfolio form, so account-specific required fields and the final submission receipt must be checked there. Video is still an event requirement even though its preparation is excluded here.
+The public event pages do not expose the user's signed-in Devfolio form, so account-specific required fields and the final submission receipt must be checked there. The video now meets the duration limit; final submission also requires its hosted URL and the team's publication confirmation.
 
 ## Push the prepared project
 

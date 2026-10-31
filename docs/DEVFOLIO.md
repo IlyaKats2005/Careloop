@@ -2,7 +2,7 @@
 
 Copy the sections below into the corresponding project-description fields in [the TUM Devfolio event](https://tum.devfolio.co/). Field names may vary in the signed-in form. Select **Cardano: Agentic Commerce on Cardano**. The TUM Blockchain Track considers submitted projects automatically; no BSV or API3 implementation is claimed.
 
-This file prepares the submission content. It does not represent a saved or submitted Devfolio entry. Video preparation is outside this handoff at the project owner's request.
+This file prepares the submission content. It does not represent a saved or submitted Devfolio entry. The recorded demo is available at [demo/Careloop-Demo.mp4](demo/Careloop-Demo.mp4), shortened to 2 minutes 28 seconds with pitch-preserving audio. Follow [the video publishing steps](demo/README.md) to add its hosted link to Devfolio.
 
 ## Project name
 
@@ -70,6 +70,7 @@ The current demo uses fictional reports and disposable Preprod assets. The brows
 | --- | --- |
 | Live application | https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/ |
 | Public repository | https://github.com/IlyaKats2005/Careloop |
+| Recorded demo file (available after pushing this commit) | https://github.com/IlyaKats2005/Careloop/blob/main/docs/demo/Careloop-Demo.mp4 |
 | README / setup | https://github.com/IlyaKats2005/Careloop/blob/main/README.md |
 | Exact local run instructions | https://github.com/IlyaKats2005/Careloop/blob/main/docs/RUNNING.md |
 | Architecture and privacy explanation | https://github.com/IlyaKats2005/Careloop/blob/main/docs/ARCHITECTURE.md |
@@ -81,4 +82,4 @@ The current demo uses fictional reports and disposable Preprod assets. The brows
 | Participant pool funding explorer | https://preprod.cardanoscan.io/transaction/3ab289b65292f64d19211436b9c417c725d332431dad72c9bd1ff5a67f6e3bb1 |
 | Participant payout explorer | https://preprod.cardanoscan.io/transaction/822634daddc045a367669ebba5d6c07af7d3ec071c984cabb1c26c27e479f2e5 |
 
-The historical receipts demonstrate those specific completed runs. A new live demonstration must show its own report/job and transaction. No video URL is supplied in this handoff.
+The historical receipts demonstrate those specific completed runs. A new live demonstration must show its own report/job and transaction. For Devfolio's Video Demo field, upload the MP4 to a supported host (YouTube is preferred), paste the actual video URL, then publish the existing project and verify its Submitted status. A GitHub push does not submit Devfolio.

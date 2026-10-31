@@ -14,6 +14,8 @@ The sponsor allocates separate budgets for AI analysis and participant rewards. 
 
 **Live link: https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/**
 
+[Watch or download the recorded demo — 2:28](docs/demo/Careloop-Demo.mp4) · [Video details and submission steps](docs/demo/README.md)
+
 Use **Try participant demo**, **Try clinic demo**, or **Try sponsor demo**. In the demo, **View as** switches roles. **Demo tools → Choose participant** offers Alex, Maya and Noah already enrolled, and Sam registered with a wallet but awaiting enrollment. Wallet addresses are saved in their profiles; they do not need to enter an address for each report.
 
 The public demo runs its website and database online. Visitors only need a browser. **Paid AI requires the operator’s Masumi report worker and Payment Service; live rewards require the funded sponsor relay.** These workers currently run on the operator’s computer, so it must remain online. Use **Demo tools → Check payment service → Check service** to inspect its status; a queued reward is not a confirmed payment.
