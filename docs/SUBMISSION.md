@@ -51,7 +51,7 @@ A buyer funds Masumi escrow for a fictional questionnaire-analysis job. The serv
 - Completed Standard API job: `1224781e-666a-42f4-b01e-0b5ebfe24373`.
 - Public input/result evidence: [masumi-paid-job.json](evidence/masumi-paid-job.json). Its input and result hashes match the saved job/payment record. The withdrawal's valid contract status and exact seller net receipt were independently checked again via Blockfrost on 31 October 2026.
 
-The website now supports an explicit sponsored-analysis request for each saved report. With paid mode enabled, it purchases Masumi escrow once, then uses the matching confirmed result for reward eligibility. AI-service payment and participant reward remain separate transactions and assets. The historical receipt above belongs to the earlier standalone run; inspect each new report for its own receipts.
+With paid mode enabled, report submission automatically queues one sponsored analysis against the allocated AI budget. The worker purchases Masumi escrow once, then uses the matching confirmed result for reward eligibility. AI-service payment and participant reward remain separate transactions and assets. The historical receipt above belongs to the earlier standalone run; inspect each new report for its own receipts.
 
 ### Participant reward: custom privacy/payment flow
 

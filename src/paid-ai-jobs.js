@@ -20,6 +20,7 @@ export async function enqueuePaidAI(DB,env,report){
  if(!paidAIEnabled(env)||typeof env.SPONSOR_RELAY_TOKEN!=='string'||env.SPONSOR_RELAY_TOKEN.length<32)throw fail('Paid AI is not configured for this installation.',503);
  const input=paidInput(report);if(input.prompt.length>16000)throw fail('This questionnaire is too large for the paid analysis service.');
  const max=Math.min(20,Math.max(0,Number(env.PAID_AI_MAX_JOBS||4)));if(!Number.isSafeInteger(max))throw fail('Paid AI allowance is invalid.',503);
+ if((await first(DB,'SELECT count(*) AS n FROM care_paid_ai_jobs')).n>=max)throw fail('The sponsor’s paid AI allowance is fully allocated. This saved report will resume automatically when the sponsor increases the allowance.',409,'PAID_AI_BUDGET');
  const nonce=randomHex(10),inputHash=await hashText(nonce+';'+JSON.stringify(input));
  await reserveDemoCharge(DB,report,'ai');
  const id=crypto.randomUUID();
@@ -29,6 +30,21 @@ export async function enqueuePaidAI(DB,env,report){
  // The real payment is independently capped above. App credits remain a demo ledger.
  await run(DB,"UPDATE care_reports SET ai_status='running',ai_error='',ai_started_at=?,updated_at=? WHERE id=? AND ai_json IS NULL",now(),now(),report.id);
  return saved;
+}
+// Submission records sponsor_waiting before trying the queue, so a closed tab
+// or interrupted request cannot lose the job. Only the sponsor funds it.
+export async function queueSponsoredAnalysis(DB,env,report){
+ if(report.ai_json)return;
+ try{return await enqueuePaidAI(DB,env,report);}
+ catch(error){
+  const waiting=error.status!==400;
+  const message=error.code==='CLINIC_BUDGET'?'Waiting for the sponsor to add AI funding. This saved report will resume automatically.':error.status?error.message:'The sponsor service will retry this saved analysis automatically.';
+  await run(DB,'UPDATE care_reports SET ai_status=?,ai_error=?,updated_at=? WHERE id=? AND ai_json IS NULL AND NOT EXISTS (SELECT 1 FROM care_paid_ai_jobs WHERE report_id=?)',waiting?'sponsor_waiting':'failed',message,now(),report.id,report.id);
+ }
+}
+async function resumeWaitingAnalyses(DB,env){
+ const rows=await DB.prepare("SELECT r.* FROM care_reports r JOIN care_workspaces w ON w.id=r.workspace_id WHERE r.ai_status='sponsor_waiting' AND r.ai_json IS NULL AND (w.expires_at IS NULL OR w.expires_at>?) AND NOT EXISTS (SELECT 1 FROM care_paid_ai_jobs j WHERE j.report_id=r.id) ORDER BY r.updated_at,r.id LIMIT 5").bind(now()).all();
+ for(const report of rows.results||[])await queueSponsoredAnalysis(DB,env,report);
 }
 async function authorize(request,env){
  const expected=env.SPONSOR_RELAY_TOKEN||'',actual=request.headers.get('authorization')||'';
@@ -82,6 +98,7 @@ export async function paidAIWorkerAPI(request,env,services={}){
    if(!paidAIEnabled(env))return json({job:null});
    if(!/^[a-zA-Z0-9_-]{1,80}$/.test(body.workerId||''))throw fail('Worker identity required.');
    await run(DB,"INSERT INTO care_sponsor_relay (id,last_seen) VALUES ('paid-ai',?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen",now());
+   await resumeWaitingAnalyses(DB,env);
    const job=await first(DB,"SELECT j.*,r.answers_json,r.program_json FROM care_paid_ai_jobs j JOIN care_reports r ON r.id=j.report_id WHERE j.state NOT IN ('settled','blocked') AND (j.lease_expires_at IS NULL OR j.lease_expires_at<=?) ORDER BY j.updated_at,j.id LIMIT 1",now());
    if(!job)return json({job:null});
    const token=randomHex(24),saved=await run(DB,'UPDATE care_paid_ai_jobs SET lease_token=?,lease_worker=?,lease_expires_at=? WHERE id=? AND (lease_expires_at IS NULL OR lease_expires_at<=?)',token,body.workerId,now()+180,job.id,now());

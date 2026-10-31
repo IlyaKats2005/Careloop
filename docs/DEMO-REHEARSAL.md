@@ -25,7 +25,7 @@ The website and database are hosted. ZK proofs run in each participant's browser
 1. Open Alex, Maya or Noah through **Demo tools → Choose participant**, or enroll Sam first, then open a check-in.
 2. Show the wallet already saved in the profile; there is no address to paste into the form. The demo creates the private enrollment key automatically on first use. Download its recovery file and keep the download out of the recording. Ordinary participant registration asks for a receiving address once and remembers it across logins.
 3. Enter complete fictional answers that agree: taking medication as prescribed, no missed doses, no new symptoms, no impact, able to keep fluids down, no contact requested. Fill the exact questions of the selected program.
-4. Review, consent and submit, then request the sponsored 1-test-USDM analysis. Follow its escrow and result commitment. An eligible result does not need another clinic approval click.
+4. Review, consent and submit. The sponsored 1-test-USDM analysis queues automatically against the allocated AI budget. Follow its escrow and result commitment. An eligible result does not need another clinic approval click.
 5. Show the saved report ID and actual decision. If it goes on hold, show that result and inspect the reason; do not describe it as an automatic pass.
 6. Keep the participant's **My rewards**, **My reports**, or submitted report open. Funding confirmation triggers the private proof; the sponsor pays fees. Wait for the new claim's verified receipt, then open its explorer link and inspect the 2-ADA recipient output.
 

@@ -45,6 +45,7 @@ function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
    if(state.reports.some(r=>r.programId===body.programId&&r.periodId===body.periodId))return Response.json({message:'A report is already saved for this period.'},{status:409});
    const program=state.programs.find(p=>p.id===body.programId);assert.ok(program);
    const report={id:'R-'+randomUUID(),programId:program.id,programConfig:programsModule.normalizeProgram(program),participant:'P-SERVER',periodId:body.periodId,period:'Current period',date:'Server date',quality:'Complete',clinical:'Awaiting review',payment:'Pending',answers:copy(body.answers),audit:['Server saved a fictional report.'],decision:'',ai:null,aiError:'',rewardApproval:null,chain:{}};
+   if(state.paidAIEnabled){report.aiStatus='running';report.analysisPayment={id:'paid-'+report.id,state:'queued',inputHash:'a'.repeat(64)};}
    state.reports.unshift(report);return Response.json({report},{status:201});
   }
   const match=path.match(/^\/api\/data\/reports\/([^/]+)\/(analyze|review|chain|status|proof)$/);
@@ -201,7 +202,7 @@ test('missing recipient stops submission before spending sponsor funds',async()=
 
 test('demo readiness distinguishes an unreachable service and previous receipts from a fresh payment',async()=>{
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('demoReady')");await tick();
- assert.match(ui.html(),/Sponsor payment service: Online/);assert.match(ui.html(),/request sponsored analysis from a saved report/);assert.match(ui.html(),/Previous website payout/);
+ assert.match(ui.html(),/Sponsor payment service: Online/);assert.match(ui.html(),/submitting a report automatically queues/);assert.match(ui.html(),/Previous website payout/);
  backend.hooks.request=call=>{if(call.path==='/api/sponsor/status')throw Error('network unavailable');};
  await ui.run('loadSponsorStatus()');assert.match(ui.html(),/Connection not verified/);assert.doesNotMatch(ui.html(),/Sponsor payment service: Online/);
  assert.equal(backend.requests.filter(r=>r.method==='POST'&&r.path!=='/api/demo/start').length,0);
@@ -360,19 +361,25 @@ test('held rewards stay on hold when the rewards page is open',async()=>{
  ui.run("nav('rewards')");await tick();await ui.run('pollRewardList(payoutWatch)');assert.match(ui.html(),/On hold/);assert.equal(ui.proofCalls.length,0);
 });
 
-test('paid mode saves a report first, shows its fixed price, and queues once from the explicit request',async()=>{
+test('paid submission shows its automatically queued job with no participant payment action, including after reload',async()=>{
  const backend=service();backend.state.paidAIEnabled=true;
- backend.hooks.request=call=>{
-  if(call.path.endsWith('/analyze')){
-   assert.deepEqual(call.body,{billing:'masumi'});const report=backend.state.reports[0];
-   report.analysisPayment={id:'paid-job',state:'queued',inputHash:'a'.repeat(64)};
-   return Response.json({report},{status:202});
-  }
- };
  const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
  assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,0);
- assert.match(ui.html(),/Request sponsored analysis · 1 test USDM/);const id=ui.data('reports[0].id');
- await ui.run(`runAI('${id}')`);await tick();
- assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,1);assert.match(ui.html(),/Waiting for the payment worker/);assert.doesNotMatch(ui.html(),/Request sponsored analysis · 1 test USDM/);
+ assert.match(ui.html(),/Waiting for the payment worker/);assert.match(ui.html(),/1 test USDM/);
+ assert.match(ui.html(),/Queued automatically/);assert.doesNotMatch(ui.html(),/Request sponsored analysis|onclick="runAI/);
  assert.match(ui.html(),/No questionnaire, enrollment secret or Merkle path/);
+ const job=ui.data('reports[0].analysisPayment.id');
+ const fresh=await workspace({backend,storage:new Map()});await fresh.run("enterWorkspace('patient')");
+ assert.equal(fresh.data('reports[0].analysisPayment.id'),job);
+ assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,1);
+ assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,0);
+});
+
+test('a saved report waiting for sponsor budget is not described as a failed analysis',async()=>{
+ const backend=service();backend.state.paidAIEnabled=true;
+ const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
+ const report=backend.state.reports[0];report.analysisPayment=null;report.aiStatus='sponsor_waiting';report.aiError='The sponsor’s AI budget is empty.';
+ await ui.run('refreshWorkspace()');
+ assert.match(ui.html(),/Waiting for sponsor funding/);assert.match(ui.html(),/starts automatically/);
+ assert.doesNotMatch(ui.html(),/Analysis failed|onclick="runAI|Request sponsored analysis/);
 });

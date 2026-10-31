@@ -1,5 +1,5 @@
 import {getSession} from './auth.js';
-import {enqueuePaidAI,paidAIJSON,paidAIEnabled} from './paid-ai-jobs.js';
+import {queueSponsoredAnalysis,paidAIJSON,paidAIEnabled} from './paid-ai-jobs.js';
 import {DEMO_CLIENTS,demoParticipantKey} from './demo-clients.js';
 import {DEFAULT_PROGRAMS,normalizeProgram} from './programs.js';
 import {field,commitment as makeCommitment,leaf,tree,randomSecret,config} from './zk-core.js';
@@ -202,7 +202,8 @@ export async function dataAPI(request,env={},services={}){
    if(body.recipientAddress&&body.recipientAddress!==recipient.address)throw fail('This address differs from your saved profile wallet. Refresh the profile before submitting.',409,'WALLET_MISMATCH');
    const decision=rewardDecision(answers,program,null);
    const quality=Object.values(answers.symptoms).includes('Not sure')?'Clarification needed':'Complete';
-   try{await run(DB,'INSERT INTO care_reports (id,workspace_id,program_id,enrollment_id,period_id,period_label,program_json,answers_json,quality,clinical,payment,audit_json,created_at,updated_at,recipient_address,reward_decision_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,p.workspace_id,program.id,enrollment.id,period.id,period.label,JSON.stringify(program),JSON.stringify(answers),quality,'Awaiting review','Pending',JSON.stringify([event('Participant submitted a fictional report. Original answers saved.')]),now(),now(),recipient?.address||null,JSON.stringify(decision));}catch(error){if(/unique|constraint/i.test(String(error)))throw fail('A report is already saved for this program and reporting period.',409,'DUPLICATE_REPORT');throw error;}
+   try{await run(DB,'INSERT INTO care_reports (id,workspace_id,program_id,enrollment_id,period_id,period_label,program_json,answers_json,quality,clinical,payment,audit_json,created_at,updated_at,recipient_address,reward_decision_json,ai_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,p.workspace_id,program.id,enrollment.id,period.id,period.label,JSON.stringify(program),JSON.stringify(answers),quality,'Awaiting review','Pending',JSON.stringify([event('Participant submitted a fictional report. Original answers saved.')]),now(),now(),recipient?.address||null,JSON.stringify(decision),paidAIEnabled(env)?'sponsor_waiting':'pending');}catch(error){if(/unique|constraint/i.test(String(error)))throw fail('A report is already saved for this program and reporting period.',409,'DUPLICATE_REPORT');throw error;}
+   if(paidAIEnabled(env))await queueSponsoredAnalysis(DB,env,await reportFor(ctx,id));
    return json({report:reportJSON(await reportFor(ctx,id))},201);
   }
   const match=path.match(/^\/api\/data\/reports\/(R-[a-f0-9-]+)\/(review|analyze|chain|proof)$/);
@@ -240,8 +241,7 @@ export async function dataAPI(request,env={},services={}){
    return json({report:reportJSON(await reportFor(ctx,report.id))});
   }
   if(report.paid_ai_job||paidAIEnabled(env)){
-   if(!report.paid_ai_job&&body.billing!=='masumi')throw fail('Confirm the sponsored 1-test-USDM analysis request.',400,'PAID_AI_CONFIRMATION');
-   await enqueuePaidAI(DB,env,report);return json({report:reportJSON(await reportFor(ctx,report.id))},202);
+   await queueSponsoredAnalysis(DB,env,report);return json({report:reportJSON(await reportFor(ctx,report.id))},202);
   }
   if(typeof services.analyze!=='function')throw fail('AI analysis is temporarily unavailable.',503);
   throttle('ai:'+ctx.key,6);

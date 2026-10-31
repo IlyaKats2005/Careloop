@@ -15,7 +15,8 @@ test('ZK panel distinguishes submitted proof from on-chain verification and expl
 });
 test('paid UI identifies legacy analyses and escapes untrusted payment metadata',()=>{
  assert.match(paidAnalysisCard({ai:{}}),/no Masumi payment/);
- assert.match(paidAnalysisCard({id:'R-a123'},true),/Request sponsored analysis/);
+ const waiting=paidAnalysisCard({id:'R-a123',aiStatus:'sponsor_waiting'},true);
+ assert.match(waiting,/starts automatically/);assert.match(waiting,/sponsor pays 1 test USDM/);assert.doesNotMatch(waiting,/<button|onclick=/);
  const html=paidAnalysisCard({id:'R-a123',analysisPayment:{...ai,jobId:'<script>alert(1)</script>',error:'<img src=x onerror=alert(1)>'}},true);
  assert.doesNotMatch(html,/<script>|<img/);assert.match(html,/&lt;script&gt;/);assert.match(sponsorPayments([{analysisPayment:ai,payout}]),/separate assets/);
 });

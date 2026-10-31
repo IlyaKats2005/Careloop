@@ -123,7 +123,7 @@ Verify historical paid-job hashes with [the public evidence instructions](eviden
 
 ## Paid AI for website reports
 
-The default fresh clone uses direct model analysis. To connect website reports to **1-test-USDM Masumi escrow**, follow [Connect website reports to paid analysis](../integrations/masumi/README.md#connect-website-reports-to-paid-analysis). Configure your own Payment Service, database, registered seller, funded buyer and report worker, then set `PAID_AI_ENABLED=true` in the app’s environment and restart the app. The report presents **Request sponsored analysis · 1 test USDM**; the sponsor pays, not the participant.
+The default fresh clone uses direct model analysis. To connect website reports to **1-test-USDM Masumi escrow**, follow [Connect website reports to paid analysis](../integrations/masumi/README.md#connect-website-reports-to-paid-analysis). Configure your own Payment Service, database, registered seller, funded buyer and report worker, then set `PAID_AI_ENABLED=true` in the app’s environment and restart the app. Submitting a report automatically queues its sponsored 1-test-USDM analysis; the participant has no payment button. Reports waiting for sponsor budget or job allowance resume automatically when capacity becomes available.
 
 Keep the app, Masumi Payment Service, Masumi report worker and participant reward relay running. Browser proof generation remains in the participant tab. These are separate services; a live website alone does not mean either payment worker is running. The Standard API/Coworker demonstration routes are optional alternatives and are not required by the website worker.
 

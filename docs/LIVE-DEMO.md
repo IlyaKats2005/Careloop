@@ -16,7 +16,7 @@ Open [the live app](https://careloop-study-prototype.perasperaadastra3008.chatgp
 
 1. Select a program and open its check-in.
 2. Enter a short, internally consistent **fictional** report. Use the actual form controls and confirm fictional-data consent.
-3. Submit, then select **Request sponsored analysis · 1 test USDM**. Show the report ID, escrow funding and confirmed result commitment. Explain the completion decision from that paid result. Final seller settlement is a later, separately tracked step.
+3. Submit. The sponsor-funded 1-test-USDM analysis queues automatically; there is no participant payment action. Show the report ID, escrow funding and confirmed result commitment. Explain the completion decision from that paid result. Final seller settlement is a later, separately tracked step.
 4. If automatically authorized, follow the real statuses: queued for sponsor → funding submitted → funding confirmed → local proof → claim submitted → claim confirmed. Keep the participant's **My rewards**, **My reports**, or submitted report open to generate the proof automatically. An ordinary valid report does not require another clinic approval click.
 5. Open the **new claim's explorer link**. Show the transaction, the 2-test-ADA recipient output and the pool state. The funding transaction and claim transaction are different transactions.
 6. Refresh the report or sign in again to demonstrate server persistence. An approval or submitted hash alone must never be presented as a settled payment.

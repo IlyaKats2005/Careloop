@@ -233,12 +233,13 @@ async function paidCall(DB,path,body,env=paidEnv,auth=true){
  const response=await paidAIWorkerAPI(new Request('https://careloop.test/api/paid-ai/'+path,{method:'POST',headers:{'Content-Type':'application/json',...(auth?{Authorization:'Bearer '+env.SPONSOR_RELAY_TOKEN}:{})},body:JSON.stringify(body)}),{DB,...env},{complete:(id,result)=>completePaidAnalysis(DB,env,id,result,validateOutput)});
  return {status:response.status,body:await response.json()};
 }
-async function paidSetup(){const context=await setup();const {DB,patient,program}=context;const created=await call(DB,'/api/data/reports',{cookie:patient.cookie,method:'POST',body:{...reportFor(program),recipientAddress},env:paidEnv});return {...context,id:created.body.report.id};}
-test('paid analysis requires a named request and repeated clicks purchase only one immutable job',async()=>{
- const {DB,patient,program,id}=await paidSetup();
+async function paidSetup(env=paidEnv){const context=await setup();const {DB,patient,program}=context;const created=await call(DB,'/api/data/reports',{cookie:patient.cookie,method:'POST',body:{...reportFor(program),recipientAddress},env});assert.equal(created.status,201);return {...context,id:created.body.report.id,created:created.body.report};}
+test('submission automatically queues one immutable paid job and retries never purchase another',async()=>{
+ const {DB,patient,program,id,created}=await paidSetup();
+ assert.equal(created.analysisPayment.state,'queued');assert.equal(created.aiStatus,'running');
+ const duplicate=await call(DB,'/api/data/reports',{cookie:patient.cookie,method:'POST',body:reportFor(program),env:paidEnv});assert.equal(duplicate.status,409);
  const options={cookie:patient.cookie,method:'POST',body:{},env:paidEnv,services:{analyze(){throw Error('direct AI must never run')}}};
- assert.equal((await call(DB,`/api/data/reports/${id}/analyze`,options)).body.error,'PAID_AI_CONFIRMATION');
- const results=await Promise.all([1,2].map(()=>call(DB,`/api/data/reports/${id}/analyze`,{...options,body:{billing:'masumi',answers:{notes:'injected'}}})));
+ const results=await Promise.all([1,2].map(()=>call(DB,`/api/data/reports/${id}/analyze`,{...options,body:{answers:{notes:'injected'}}})));
  assert.ok(results.every(r=>r.status===202));assert.equal(results[0].body.report.analysisPayment.id,results[1].body.report.analysisPayment.id);
  assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,1);
  assert.equal(results[0].body.report.rewardApproval,null);
@@ -252,7 +253,6 @@ test('paid analysis requires a named request and repeated clicks purchase only o
 });
 test('paid result needs confirmed funding, an immutable matching hash and a valid lease before reward authorization',async()=>{
  const {DB,patient,program,id}=await paidSetup();
- await call(DB,`/api/data/reports/${id}/analyze`,{cookie:patient.cookie,method:'POST',body:{billing:'masumi'},env:paidEnv});
  let lease=(await paidCall(DB,'lease',{workerId:'test'})).body;
  const resultText=JSON.stringify({...cleanAI,programId:program.id,model:'fixture'});
  const body={leaseToken:lease.leaseToken,inputHash:lease.job.inputHash,state:'result_ready',blockchainIdentifier:'p'.repeat(1124),agentIdentifier:'fixed-agent',sellerAddress:'fixed-seller',resultHash:await hashText(lease.job.nonce+';'+resultText),resultText};
@@ -275,9 +275,65 @@ test('paid result needs confirmed funding, an immutable matching hash and a vali
  assert.equal((await paidCall(DB,'lease',{workerId:'test'})).body.job,null);
  DB.sqlite.close();
 });
-test('paid job cap remains enforced across demo resets and rejected requests buy nothing',async()=>{
- const {DB,patient,id}=await paidSetup();
- const result=await call(DB,`/api/data/reports/${id}/analyze`,{cookie:patient.cookie,method:'POST',body:{billing:'masumi'},env:{...paidEnv,PAID_AI_MAX_JOBS:'0'}});
- assert.equal(result.status,409);assert.equal(result.body.error,'PAID_AI_BUDGET');assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,0);
+test('a report survives exhausted paid allowance and resumes from the worker without a participant request',async()=>{
+ const capped={...paidEnv,PAID_AI_MAX_JOBS:'0'};
+ const {DB,patient,id,created}=await paidSetup(capped);
+ assert.equal(created.analysisPayment,null);assert.equal(created.aiStatus,'sponsor_waiting');assert.match(created.aiError,/allowance/);
+ assert.equal((await paidCall(DB,'lease',{workerId:'test'},capped)).body.job,null);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,0);
+ const lease=(await paidCall(DB,'lease',{workerId:'test'})).body;
+ assert.equal(lease.job.reportId,id);assert.equal(lease.job.state,'queued');
+ const report=(await call(DB,`/api/data/reports/${id}/status`,{cookie:patient.cookie,env:paidEnv})).body.report;
+ assert.equal(report.aiStatus,'running');assert.equal(report.aiError,'');assert.equal(report.analysisPayment.id,lease.job.id);
+ assert.equal((await paidCall(DB,'lease',{workerId:'test'})).body.job,null);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,1);
+ DB.sqlite.close();
+});
+
+test('sponsor allocation starts a waiting report automatically and reserves its AI credit exactly once',async()=>{
+ const DB=database(),start=await call(DB,'/api/demo/start?view=sponsor',{method:'POST',body:{},env:paidEnv}),cookie=start.cookie;
+ const endpoint='/api/data/funding?mode=demo&view=sponsor';
+ const allocate=(amount,action)=>call(DB,endpoint,{cookie,method:'POST',body:{clinicId:'careloop-clinic',amount,bucket:'ai',action},env:paidEnv});
+ assert.equal((await allocate(50,'release')).status,200);
+ const program=start.body.programs[0],body=reportFor(program);
+ const created=await call(DB,'/api/data/reports?mode=demo',{cookie,method:'POST',body,env:paidEnv});
+ assert.equal(created.status,201);assert.equal(created.body.report.aiStatus,'sponsor_waiting');assert.equal(created.body.report.analysisPayment,null);
+ assert.equal((await paidCall(DB,'lease',{workerId:'test'})).body.job,null);
+ assert.equal((await call(DB,endpoint,{cookie})).body.funding.clinic.aiPending,0);
+ assert.equal((await allocate(1,'reserve')).status,200);
+ // Only the worker polls after allocation; the participant can close the tab.
+ const lease=(await paidCall(DB,'lease',{workerId:'test'})).body;
+ assert.equal(lease.job.reportId,created.body.report.id);
+ assert.equal((await call(DB,'/api/data/reports?mode=demo',{cookie,method:'POST',body,env:paidEnv})).status,409);
+ const retries=await Promise.all([1,2].map(()=>call(DB,`/api/data/reports/${lease.job.reportId}/analyze?mode=demo`,{cookie,method:'POST',body:{},env:paidEnv})));
+ assert.ok(retries.every(r=>r.body.report.analysisPayment.id===lease.job.id));
+ assert.equal((await paidCall(DB,'lease',{workerId:'other'})).body.job,null);
+ const funding=(await call(DB,endpoint,{cookie})).body.funding;
+ assert.equal(funding.clinic.ai,0);assert.equal(funding.clinic.aiPending,1);assert.equal(funding.clinic.aiSpent,0);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,1);
+ DB.sqlite.close();
+});
+
+test('restart cannot replenish the real paid allowance or charge a waiting report in an expired workspace',async()=>{
+ const DB=database(),env={...paidEnv,PAID_AI_MAX_JOBS:'1'};
+ const start=await call(DB,'/api/demo/start',{method:'POST',body:{},env});
+ const first=await call(DB,'/api/data/reports?mode=demo',{cookie:start.cookie,method:'POST',body:reportFor(start.body.programs[0]),env});
+ assert.equal(first.body.report.analysisPayment.state,'queued');
+ const next=await call(DB,'/api/demo/restart',{cookie:start.cookie,method:'POST',body:{},env});
+ const second=await call(DB,'/api/data/reports?mode=demo',{cookie:next.cookie,method:'POST',body:reportFor(next.body.programs[0]),env});
+ assert.equal(second.status,201);assert.equal(second.body.report.aiStatus,'sponsor_waiting');assert.equal(second.body.report.analysisPayment,null);
+ const funding=(await call(DB,'/api/data/funding?mode=demo&view=sponsor',{cookie:next.cookie})).body.funding;
+ assert.equal(funding.clinic.ai,50);assert.equal(funding.clinic.aiPending,0);
+ DB.sqlite.prepare('UPDATE care_workspaces SET expires_at=1 WHERE id=?').run(next.body.workspace.id);
+ await paidCall(DB,'lease',{workerId:'test'},paidEnv);
+ assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_paid_ai_jobs').get().n,1);
+ DB.sqlite.close();
+});
+
+test('configuration interruption preserves the report for automatic worker recovery',async()=>{
+ const {DB,id,created}=await paidSetup({...paidEnv,SPONSOR_RELAY_TOKEN:''});
+ assert.equal(created.aiStatus,'sponsor_waiting');assert.equal(created.analysisPayment,null);
+ const lease=(await paidCall(DB,'lease',{workerId:'test'})).body;
+ assert.equal(lease.job.reportId,id);assert.equal(DB.sqlite.prepare('SELECT count(*) n FROM care_reports').get().n,1);
  DB.sqlite.close();
 });

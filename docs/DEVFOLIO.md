@@ -28,7 +28,7 @@ For an approved reward, a dedicated sponsor relay funds an Aiken/Plutus V3 contr
 
 The sponsor covers transaction fees and submits the claim. The validator verifies the proof, requires the correct 2-test-ADA recipient output, preserves the remaining pool and records an unused nullifier. The application marks payment complete only after checking the matching chain receipt. One demonstrated claim leaves 18 test ADA in its pool.
 
-The website’s sponsored-analysis request purchases a fictional questionnaire analysis for 1 test USDM through Masumi Payment Service. A durable worker waits for confirmed escrow, analyzes that report’s saved answers and program configuration, commits the result hash and returns the matching confirmed result to completion policy. It separately verifies seller settlement. Each report has one immutable paid job; refresh does not buy another. The original standalone Standard API service and its historical paid-job evidence remain available.
+Submitting a report automatically queues the sponsor-funded purchase of a fictional questionnaire analysis for 1 test USDM through Masumi Payment Service. A durable worker waits for confirmed escrow, analyzes that report’s saved answers and program configuration, commits the result hash and returns the matching confirmed result to completion policy. It separately verifies seller settlement. Each report has one immutable paid job; refresh does not buy another. The original standalone Standard API service and its historical paid-job evidence remain available.
 
 ## Why Cardano and zero-knowledge proofs
 
@@ -60,9 +60,9 @@ We separated clinical review from reward eligibility so that a symptom flag does
 
 ## How it could run in real use
 
-A sponsor would fund a study, clinics would configure questionnaires and review exceptions, and participants would receive direct completion rewards. Analysis is purchased as an explicit Masumi job whose payment is linked to its result. The next operational step is to move the signer to a persistent hosted worker using the included deployment package. A real clinical deployment would also need appropriate clinic access and data-processing boundaries, a validated review model, and a reusable reward-pool design.
+A sponsor would fund a study, clinics would configure questionnaires and review exceptions, and participants would receive direct completion rewards. Analysis is automatically purchased as a Masumi job whose payment is linked to its result. The next operational step is to move the signer to a persistent hosted worker using the included deployment package. A real clinical deployment would also need appropriate clinic access and data-processing boundaries, a validated review model, and a reusable reward-pool design.
 
-The current demo uses fictional reports and disposable Preprod assets. The browser generates the private proof; the sponsor relay still runs on the operator's computer. Each report gets a separate experimental pool with no refund/close path. The proof establishes approved membership, not medical truth or global identity uniqueness. The paid website route requires an explicit sponsored-analysis request; submitting a form alone does not spend test USDM. The operator must keep Masumi, its report worker and the reward relay online.
+The current demo uses fictional reports and disposable Preprod assets. The browser generates the private proof; the sponsor relay still runs on the operator's computer. Each report gets a separate experimental pool with no refund/close path. The proof establishes approved membership, not medical truth or global identity uniqueness. In paid mode, submission automatically queues one 1-test-USDM job within sponsor budget and installation limits. A report waiting for budget resumes automatically when funding is available. Sponsor credit allocation is off-chain accounting; the worker creates actual Masumi escrow per job. The operator must keep Masumi, its report worker and the reward relay online.
 
 ## Links to enter
 
