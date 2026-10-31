@@ -81,6 +81,38 @@ function fillEditor(ui,program){const fields={cfgId:program.id,cfgName:program.n
 
 // These assertions focus on user-visible transitions and persistence boundaries,
 // rather than mirroring the implementation's rendering internals.
+test('care journey opens activities, preserves drafts and keeps future periods unavailable',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('checkin')");
+ assert.match(ui.html(),/YOUR CARE JOURNEY/);assert.match(ui.html(),/LEVEL 01/);
+ assert.equal((ui.html().match(/disabled aria-label="[^"]+future reporting period/g)||[]).length,10);
+ ui.run("openCheckinActivity(0);setDraft('status','Not sure');setDraft('missed','No');returnToJourney()");
+ assert.equal(ui.data('draft.status'),'Not sure');assert.equal(ui.data('journeyProgress()[1]'),true);
+ ui.run("openCheckinActivity('read')");assert.match(ui.html(),/does not tell you when to take medication/);
+ ui.run('finishJourneyReading()');assert.equal(ui.data('journeyProgress()[0]'),true);
+ assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports'||r.path.endsWith('/analyze')).length,0);
+ ui.run("openCheckinActivity(1);moveStep(1)");assert.equal(ui.data('step'),1);assert.match(ui.element('#formError').textContent,/Choose a response/);
+ assert.ok(ui.storageWrites.every(write=>!write.value.includes('Not sure')));
+});
+
+test('saving a report completes its reporting chapter without inventing payment or reading progress',async()=>{
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
+ ui.run("nav('checkin')");assert.match(ui.html(),/Check-in saved/);assert.match(ui.html(),/4 \/ 5/);
+ assert.match(ui.html(),/does not mean a confirmed reward/);assert.equal(ui.data('journeyProgress()[0]'),false);
+ ui.run("openCheckinActivity('read');finishJourneyReading()");assert.match(ui.html(),/5 \/ 5/);
+ ui.run('openCheckinActivity(0)');assert.equal(ui.data('checkinActivity'),null);
+ assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,1);
+});
+
+test('journey periods follow configured cadence across month and ISO-year boundaries',async()=>{
+ const ui=await workspace();await ui.run("enterWorkspace('patient')");
+ for(const cadence of programsModule.CADENCES){
+  ui.run('currentProgram().cadence='+JSON.stringify(cadence));
+  const periods=ui.data("[0,1,2].map(i=>i?nextJourneyPeriod(i,new Date('2026-12-31T12:00:00Z')).id:periodFor(currentProgram(),new Date('2026-12-31T12:00:00Z')).id)");
+  assert.equal(new Set(periods).size,3,cadence+' has distinct future periods');
+ }
+ ui.run("currentProgram().cadence='Monthly'");assert.equal(ui.data("nextJourneyPeriod(1,new Date('2026-01-31T12:00:00Z')).id"),'2026-02');
+});
+
 test('submission waits for the server record, then automatically requests AI without approving payment',async()=>{
  const backend=service(),saveGate=pending(),analysisGate=pending();backend.hooks.request=async call=>{if(call.path==='/api/data/reports')await saveGate.promise;if(call.path.endsWith('/analyze'))await analysisGate.promise;};
  const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);
@@ -209,7 +241,7 @@ test('demo readiness distinguishes an unreachable service and previous receipts 
 });
 
 test('check-in exposes enrollment creation and recovery without submitting or spending',async()=>{
- const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('checkin')");
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('checkin');openCheckinActivity(0)");
  assert.match(ui.html(),/Your private enrollment is ready/);assert.match(ui.html(),/Download private recovery file/);
  ui.run('prepareEnrollment()');assert.match(ui.html(),/Download private recovery file/);
  assert.equal(backend.requests.filter(r=>r.path==='/api/data/reports').length,0);
@@ -239,7 +271,7 @@ test('symptom priority is explained separately from answer validity and reward a
 });
 
 test('check-ins show the profile wallet without requesting or submitting another destination',async()=>{
- const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient');");ui.run("step=0;nav('checkin')");
+ const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient');");ui.run("nav('checkin');openCheckinActivity(0)");
  assert.match(ui.html(),/Alex Morgan · Wallet saved at registration/);assert.match(ui.html(),/addr_test1fixture/);
  assert.doesNotMatch(ui.html(),/id="rewardRecipient"|id="profileWallet"|connectReceivingWallet/);
  fillReport(ui);ui.run("draft.recipientAddress='untrusted-form-destination'");await ui.run('submitReport()');
