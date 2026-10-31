@@ -15,6 +15,7 @@ AI-assisted review and ZK-gated rewards on Cardano Preprod.
 
 **[Open the demo](https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/)**
 &nbsp; · &nbsp; **[Watch the 2:28 demo](docs/demo/Careloop-Demo.mp4)**
+&nbsp; · &nbsp; **[Presentation slides](docs/slides/Careloop_Technology_English.pptx)**
 &nbsp; · &nbsp; **[Run locally](#quick-start-on-your-own-computer)**
 
 [Architecture](#technology-at-a-glance) · [How ZK works](#zero-knowledge-in-careloop) · [Transaction evidence](#verification-and-existing-evidence) · [Submission](docs/DEVFOLIO.md)
