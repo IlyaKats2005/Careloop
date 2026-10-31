@@ -14,7 +14,8 @@
     "zk:setup": "node scripts/zk-setup.mjs",
     "test:masumi": "node --test integrations/masumi/*.test.mjs",
     "relay:check": "node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs --check",
-    "relay": "node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs"
+    "relay": "node --use-env-proxy --env-file=.env scripts/sponsor-relay.mjs",
+    "paid-ai": "cd integrations/masumi && npm run reports"
   },
   "dependencies": {
     "@lucid-evolution/lucid": "^0.8.9",

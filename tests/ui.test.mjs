@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {dataAPI} from '../src/data-api.js';
 import {createLocalDatabase} from '../scripts/local-db.mjs';
 import * as programsModule from '../src/programs.js';
+import * as paymentsModule from '../src/payments-view.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
 const goodAnalysis={summary:'No new concern in the fictional check-in.',review_priority:'routine',findings:[],missing_information:[],possible_contradictions:[],submission_validity:{status:'clear',issues:[]},model:'gemini-2.5-flash',clinical_validation:false,approval:false};
@@ -66,7 +67,7 @@ function service({programs=programsModule.DEFAULT_PROGRAMS,reports=[]}={}){
 async function workspace({backend=service(),session={signedIn:false,user:null},storage=new Map(),browserReload=false}={}){
  const elements=new Map(),storageWrites=[],blockchainCalls=[],cloudRewards=[],ownerChanges=[],proofCalls=[];
  const document={querySelector(selector){if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',style:{},value:'',checked:false,focus(){}});return elements.get(selector)}};
- const window={confirm:()=>true,careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
+ const window={confirm:()=>true,careloopValidateRecipient:async address=>address,careloopBuildSponsoredProof:async(report,address)=>{proofCalls.push({id:report.id,address});return {proof:{pi_a:['test']},publicSignals:['public']};},scrollTo(){},CareloopPrograms:programsModule,CareloopPayments:paymentsModule,privacyPanel:()=>'<div>Real wallet workspace</div>',careloopRecoveryPanel:()=>'<details><summary>Private enrollment recovery</summary><button>Download private recovery file</button><label>Restore recovery file<input type="file"></label></details>',zkEnroll(){window.careloopCommitment='1234';},careloopSetRewardOwner(owner){ownerChanges.push(owner)},careloopRewardBusy:()=>false,careloopUseCloudReport:async(report,options)=>cloudRewards.push({report:copy(report),options:copy(options)}),careloopChainSnapshot:()=>({network:'Preprod',poolConfirmed:false}),careloopBlockchain:{render(context){blockchainCalls.push(copy(context));return '<div>Blockchain lab fixture</div>';}}};
  const sessionStorage={get length(){return storage.size},key:index=>[...storage.keys()][index]??null,getItem:key=>storage.get(key)??null,setItem(key,value){storageWrites.push({key,value});storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
  const context=vm.createContext({document,window,sessionStorage,crypto:{randomUUID},performance:{getEntriesByType:()=>[{type:browserReload?'reload':'navigate'}]},URLSearchParams,location:{search:''},setTimeout:()=>0,clearTimeout:()=>{},fetch:(url,options)=>backend.fetch(url,options,session)});
  const source=readFileSync('public/app.js','utf8');assert.match(source,/render\(\);initialize\(\);\s*$/);
@@ -200,7 +201,7 @@ test('missing recipient stops submission before spending sponsor funds',async()=
 
 test('demo readiness distinguishes an unreachable service and previous receipts from a fresh payment',async()=>{
  const backend=service(),ui=await workspace({backend});await ui.run("enterWorkspace('patient')");ui.run("nav('demoReady')");await tick();
- assert.match(ui.html(),/Sponsor payment service: Online/);assert.match(ui.html(),/does not create another Masumi purchase/);assert.match(ui.html(),/Previous website payout/);
+ assert.match(ui.html(),/Sponsor payment service: Online/);assert.match(ui.html(),/request sponsored analysis from a saved report/);assert.match(ui.html(),/Previous website payout/);
  backend.hooks.request=call=>{if(call.path==='/api/sponsor/status')throw Error('network unavailable');};
  await ui.run('loadSponsorStatus()');assert.match(ui.html(),/Connection not verified/);assert.doesNotMatch(ui.html(),/Sponsor payment service: Online/);
  assert.equal(backend.requests.filter(r=>r.method==='POST'&&r.path!=='/api/demo/start').length,0);
@@ -357,4 +358,21 @@ test('reward-list proof errors stay visible and retry once without duplicate cla
 test('held rewards stay on hold when the rewards page is open',async()=>{
  const backend=service();livePolicy(backend,'on_hold');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
  ui.run("nav('rewards')");await tick();await ui.run('pollRewardList(payoutWatch)');assert.match(ui.html(),/On hold/);assert.equal(ui.proofCalls.length,0);
+});
+
+test('paid mode saves a report first, shows its fixed price, and queues once from the explicit request',async()=>{
+ const backend=service();backend.state.paidAIEnabled=true;
+ backend.hooks.request=call=>{
+  if(call.path.endsWith('/analyze')){
+   assert.deepEqual(call.body,{billing:'masumi'});const report=backend.state.reports[0];
+   report.analysisPayment={id:'paid-job',state:'queued',inputHash:'a'.repeat(64)};
+   return Response.json({report},{status:202});
+  }
+ };
+ const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,0);
+ assert.match(ui.html(),/Request sponsored analysis · 1 test USDM/);const id=ui.data('reports[0].id');
+ await ui.run(`runAI('${id}')`);await tick();
+ assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,1);assert.match(ui.html(),/Waiting for the payment worker/);assert.doesNotMatch(ui.html(),/Request sponsored analysis · 1 test USDM/);
+ assert.match(ui.html(),/No questionnaire, enrollment secret or Merkle path/);
 });

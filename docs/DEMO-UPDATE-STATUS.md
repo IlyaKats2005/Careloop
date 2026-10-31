@@ -1,6 +1,6 @@
 # Demo update status — 30 October 2026
 
-This records prepared changes, not a claim of publication or completed submission.
+Historical snapshot from 30 October. Later website-paid-analysis work supersedes the Masumi row; use [RUNNING.md](RUNNING.md) and [LIVE-DEMO.md](LIVE-DEMO.md) for current behavior. This records prepared changes, not a claim of publication or completed submission.
 
 | Requested improvement | Verified result | Remaining external work |
 | --- | --- | --- |

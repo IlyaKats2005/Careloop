@@ -5,7 +5,7 @@ Open [the live app](https://careloop-study-prototype.perasperaadastra3008.chatgp
 ## Prepare before the audience arrives
 
 1. The public app already has a hosted API, database and Gemini configuration. Open it; a local web server is unnecessary for this URL.
-2. Leave the existing sponsor relay running, or start it using [the operator commands](RUNNING.md#current-preconfigured-operator-mac). In **Demo tools → Check payment service → Check service**, check that it is online and has a remaining payment allowance. Keep its machine awake. Normal participant rewards do not require the separate Masumi/PostgreSQL stack.
+2. Keep the sponsor relay, Masumi Payment Service and paid report worker running using [the portable run instructions](RUNNING.md#paid-ai-for-website-reports). In **Demo tools → Check payment service → Check service**, check that it is online and has a remaining payment allowance. Keep its machine awake. The paid report flow needs Masumi/PostgreSQL in addition to the participant reward relay.
 3. In guest demo mode, use **View as** for Participant, Clinic and Sponsor. **Demo tools → Choose participant** provides three enrolled clients and Sam ready to demonstrate enrollment. All four have a saved receiving wallet. If demonstrating actual accounts, use separate clinic and participant browser sessions and join with a program invitation code.
 4. Use a participant/program/reporting-period combination with **no existing submission**. The database intentionally prevents another check-in for the same enrollment and period. For a second case, use a separate demonstration participant or a second program; do not delete earlier payment evidence to replay it.
 5. Confirm the payout address belongs to a disposable Preprod demonstration wallet. Keep enough test ADA in the sponsor wallet for both funding and transaction fees. The participant's proof must bind to the selected recipient.
@@ -16,14 +16,14 @@ Open [the live app](https://careloop-study-prototype.perasperaadastra3008.chatgp
 
 1. Select a program and open its check-in.
 2. Enter a short, internally consistent **fictional** report. Use the actual form controls and confirm fictional-data consent.
-3. Submit. Show that the report has a server-assigned ID and that AI analysis is pending/completed. Explain the completion decision shown by the application.
+3. Submit, then select **Request sponsored analysis · 1 test USDM**. Show the report ID, escrow funding and confirmed result commitment. Explain the completion decision from that paid result. Final seller settlement is a later, separately tracked step.
 4. If automatically authorized, follow the real statuses: queued for sponsor → funding submitted → funding confirmed → local proof → claim submitted → claim confirmed. Keep the participant's **My rewards**, **My reports**, or submitted report open to generate the proof automatically. An ordinary valid report does not require another clinic approval click.
 5. Open the **new claim's explorer link**. Show the transaction, the 2-test-ADA recipient output and the pool state. The funding transaction and claim transaction are different transactions.
 6. Refresh the report or sign in again to demonstrate server persistence. An approval or submitted hash alone must never be presented as a settled payment.
 
 Cardano confirmation and proof generation take time. Do not promise zero latency. The app should show progress while waiting and surface a real error if a provider, relay, model or proof fails.
 
-Show the sponsor's separate AI and client credit panels before submission, and their pending/spent changes afterward. Explain that these are app accounting credits: the actual 20-test-ADA lock and 2-test-ADA payout have separate chain transactions. **Refresh** keeps this run; only **Demo tools → Restart demo**, after confirmation, resets its app records and starting credits. It cannot reset actual wallet balances or old payments.
+Show the sponsor’s separate test-USDM and test-ADA payment panels, with this report’s receipts. Off-chain credits are under the optional demo controls: the actual 20-test-ADA lock and 2-test-ADA payout have separate chain transactions. **Refresh** keeps this run; only **Demo tools → Restart demo**, after confirmation, resets its app records and starting credits. It cannot reset actual wallet balances or old payments.
 
 ## Hold case
 

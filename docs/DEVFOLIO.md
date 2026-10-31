@@ -28,7 +28,7 @@ For an approved reward, a dedicated sponsor relay funds an Aiken/Plutus V3 contr
 
 The sponsor covers transaction fees and submits the claim. The validator verifies the proof, requires the correct 2-test-ADA recipient output, preserves the remaining pool and records an unused nullifier. The application marks payment complete only after checking the matching chain receipt. One demonstrated claim leaves 18 test ADA in its pool.
 
-The separate paid AI service uses Masumi's Standard API. A buyer purchases a fictional questionnaire analysis for 1 test USDM. The agent waits for escrow funding, produces its actual analysis, submits its result hash and verifies settlement to the seller. This qualifying paid job is separate from the hosted form, which currently calls Gemini directly.
+The website’s sponsored-analysis request purchases a fictional questionnaire analysis for 1 test USDM through Masumi Payment Service. A durable worker waits for confirmed escrow, analyzes that report’s saved answers and program configuration, commits the result hash and returns the matching confirmed result to completion policy. It separately verifies seller settlement. Each report has one immutable paid job; refresh does not buy another. The original standalone Standard API service and its historical paid-job evidence remain available.
 
 ## Why Cardano and zero-knowledge proofs
 
@@ -56,13 +56,13 @@ We separated clinical review from reward eligibility so that a symptom flag does
 - Paid-job settlement: `e4fcfed76fe2b334fd2aa6d1f8531036513f31e5ec454a64cc8ad0d87a338ef1` — **1 test USDM** net to the seller.
 - The public evidence file contains the actual fictional input, exact AI output, input/result hashes and seller receipt. The hashes were matched to the saved job/payment record and the settlement was independently rechecked through Blockfrost on 31 October 2026.
 - A separate automatic website run paid **2 test ADA** to a participant: claim `822634daddc045a367669ebba5d6c07af7d3ec071c984cabb1c26c27e479f2e5`.
-- The current source passed **216 application tests and 30 Masumi integration tests**. These checks are separate from live chain receipt verification.
+- The current source passed the application and Masumi integration test suites (run `npm test` and `npm run test:masumi` for the current counts). These checks are separate from live chain receipt verification.
 
 ## How it could run in real use
 
-A sponsor would fund a study, clinics would configure questionnaires and review exceptions, and participants would receive direct completion rewards. Analysis could be purchased as an explicit Masumi job whose payment is linked to its result. The next operational step is to move the signer to a persistent hosted worker using the included deployment package. A real clinical deployment would also need appropriate clinic access and data-processing boundaries, a validated review model, and a reusable reward-pool design.
+A sponsor would fund a study, clinics would configure questionnaires and review exceptions, and participants would receive direct completion rewards. Analysis is purchased as an explicit Masumi job whose payment is linked to its result. The next operational step is to move the signer to a persistent hosted worker using the included deployment package. A real clinical deployment would also need appropriate clinic access and data-processing boundaries, a validated review model, and a reusable reward-pool design.
 
-The current demo uses fictional reports and disposable Preprod assets. The browser generates the private proof; the sponsor relay still runs on the operator's computer. Each report gets a separate experimental pool with no refund/close path. The proof establishes approved membership, not medical truth or global identity uniqueness. The standalone AI payment is implemented; automatic Masumi purchasing from every website form is not.
+The current demo uses fictional reports and disposable Preprod assets. The browser generates the private proof; the sponsor relay still runs on the operator's computer. Each report gets a separate experimental pool with no refund/close path. The proof establishes approved membership, not medical truth or global identity uniqueness. The paid website route requires an explicit sponsored-analysis request; submitting a form alone does not spend test USDM. The operator must keep Masumi, its report worker and the reward relay online.
 
 ## Links to enter
 

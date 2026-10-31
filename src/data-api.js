@@ -1,4 +1,5 @@
 import {getSession} from './auth.js';
+import {enqueuePaidAI,paidAIJSON,paidAIEnabled} from './paid-ai-jobs.js';
 import {DEMO_CLIENTS,demoParticipantKey} from './demo-clients.js';
 import {DEFAULT_PROGRAMS,normalizeProgram} from './programs.js';
 import {field,commitment as makeCommitment,leaf,tree,randomSecret,config} from './zk-core.js';
@@ -86,8 +87,8 @@ async function context(request,env){
 function canClinic(ctx){if(ctx.role!=='clinic'&&!(ctx.mode==='demo'&&ctx.view==='clinic'))throw fail('Only the program clinic can do this.',403,'CLINIC_REQUIRED');}
 function canPatient(ctx){if(!participantView(ctx))throw fail('Only an enrolled participant can do this.',403,'PARTICIPANT_REQUIRED');}
 function enrollmentJSON(row){return{id:row.id,programId:row.program_id,participant:row.pseudonym,commitment:row.commitment};}
-function reportJSON(row){return{recipientAddress:row.recipient_address||null,rewardDecision:parse(row.reward_decision_json,{state:row.approval_json?'approved':'checking',reasons:[],clinicalReview:'routine'}),payout:row.payment_job?payoutJSON(row.payment_job):{state:'not_requested',recipientAddress:row.recipient_address||null,error:row.payout_error||'',blockedReason:row.payout_error?(/clinic.*budget/i.test(row.payout_error)?'clinic_budget':'sponsor_limit'):null},id:row.id,programId:row.program_id,programConfig:parse(row.program_json),participant:row.pseudonym,periodId:row.period_id,period:row.period_label,date:new Date(row.created_at*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}),quality:row.quality,clinical:row.clinical,payment:row.payment,answers:parse(row.answers_json),ai:parse(row.ai_json),aiError:row.ai_error,aiStatus:row.ai_status,audit:parse(row.audit_json,[]),decision:row.decision,rewardApproval:parse(row.approval_json),chain:parse(row.chain_json,{}),createdAt:new Date(row.created_at*1000).toISOString()};}
-async function payload(ctx){
+function reportJSON(row){return{analysisPayment:paidAIJSON(row.paid_ai_job),recipientAddress:row.recipient_address||null,rewardDecision:parse(row.reward_decision_json,{state:row.approval_json?'approved':'checking',reasons:[],clinicalReview:'routine'}),payout:row.payment_job?payoutJSON(row.payment_job):{state:'not_requested',recipientAddress:row.recipient_address||null,error:row.payout_error||'',blockedReason:row.payout_error?(/clinic.*budget/i.test(row.payout_error)?'clinic_budget':'sponsor_limit'):null},id:row.id,programId:row.program_id,programConfig:parse(row.program_json),participant:row.pseudonym,periodId:row.period_id,period:row.period_label,date:new Date(row.created_at*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}),quality:row.quality,clinical:row.clinical,payment:row.payment,answers:parse(row.answers_json),ai:parse(row.ai_json),aiError:row.ai_error,aiStatus:row.ai_status,audit:parse(row.audit_json,[]),decision:row.decision,rewardApproval:parse(row.approval_json),chain:parse(row.chain_json,{}),createdAt:new Date(row.created_at*1000).toISOString()};}
+async function payload(ctx,env={}){
  const {DB}=ctx;let programs,enrollments,reports;
  if(participantView(ctx)){
   programs=await all(DB,'SELECT p.* FROM care_programs p JOIN care_enrollments e ON e.program_id=p.id WHERE e.participant_key=? ORDER BY p.created_at,p.id',ctx.key);
@@ -99,6 +100,7 @@ async function payload(ctx){
   reports=await all(DB,'SELECT r.*,e.pseudonym FROM care_reports r JOIN care_enrollments e ON e.id=r.enrollment_id WHERE r.workspace_id=? ORDER BY r.created_at DESC,r.id',ctx.workspace.id);
  }
  const jobs=await all(DB,'SELECT j.* FROM care_payment_jobs j JOIN care_reports r ON r.id=j.report_id WHERE '+(participantView(ctx)?'r.enrollment_id IN (SELECT id FROM care_enrollments WHERE participant_key=?)':'r.workspace_id=?'),participantView(ctx)?ctx.key:ctx.workspace.id);const jobsByReport=new Map(jobs.map(j=>[j.report_id,j]));for(const report of reports)report.payment_job=jobsByReport.get(report.id);
+ const paidJobs=await all(DB,'SELECT j.* FROM care_paid_ai_jobs j JOIN care_reports r ON r.id=j.report_id WHERE '+(participantView(ctx)?'r.enrollment_id IN (SELECT id FROM care_enrollments WHERE participant_key=?)':'r.workspace_id=?'),participantView(ctx)?ctx.key:ctx.workspace.id);const paidByReport=new Map(paidJobs.map(j=>[j.report_id,j]));for(const report of reports)report.paid_ai_job=paidByReport.get(report.id);
  let demoClients=[],availablePrograms=[];
  if(ctx.mode==='demo'){
   const clients=await all(DB,'SELECT * FROM care_demo_clients WHERE workspace_id=? ORDER BY client_id',ctx.workspace.id),memberships=await all(DB,'SELECT participant_key,program_id FROM care_enrollments WHERE workspace_id=?',ctx.workspace.id);
@@ -106,7 +108,7 @@ async function payload(ctx){
   const available=await all(DB,'SELECT * FROM care_programs WHERE workspace_id=? ORDER BY created_at,id',ctx.workspace.id);
   availablePrograms=available.map(p=>({id:p.id,name:parse(p.config_json).name,invitationCode:p.invitation_code,active:parse(p.config_json).active}));
  }
- return{workspace:{id:ctx.workspace.id,mode:ctx.mode,role:ctx.role,view:ctx.view||ctx.role,expiresAt:ctx.workspace.expires_at?new Date(ctx.workspace.expires_at*1000).toISOString():null},funding:ctx.mode==='demo'&&!participantView(ctx)?await demoFunding(DB,ctx.workspace.id):null,profile:participantView(ctx)?ctx.profile:null,demoClients,availablePrograms,programs:programs.map(p=>({...parse(p.config_json),...(participantView(ctx)?{}:{invitationCode:p.invitation_code})})),enrollments:enrollments.map(enrollmentJSON),reports:reports.map(reportJSON)};
+ return{paidAIEnabled:paidAIEnabled(env),workspace:{id:ctx.workspace.id,mode:ctx.mode,role:ctx.role,view:ctx.view||ctx.role,expiresAt:ctx.workspace.expires_at?new Date(ctx.workspace.expires_at*1000).toISOString():null},funding:ctx.mode==='demo'&&!participantView(ctx)?await demoFunding(DB,ctx.workspace.id):null,profile:participantView(ctx)?ctx.profile:null,demoClients,availablePrograms,programs:programs.map(p=>({...parse(p.config_json),...(participantView(ctx)?{}:{invitationCode:p.invitation_code})})),enrollments:enrollments.map(enrollmentJSON),reports:reports.map(reportJSON)};
 }
 async function programFor(ctx,id,ownerOnly=false){
  const program=await first(ctx.DB,'SELECT * FROM care_programs WHERE id=?',id);
@@ -118,7 +120,7 @@ async function programFor(ctx,id,ownerOnly=false){
 async function reportFor(ctx,id){
  const row=await first(ctx.DB,'SELECT r.*,e.pseudonym,e.participant_key,e.commitment FROM care_reports r JOIN care_enrollments e ON e.id=r.enrollment_id WHERE r.id=?',id);
  if(!row||(participantView(ctx)?row.participant_key!==ctx.key:row.workspace_id!==ctx.workspace.id))throw fail('Report not found.',404);
- row.payment_job=await first(ctx.DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',id);return row;
+ row.payment_job=await first(ctx.DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',id);row.paid_ai_job=await first(ctx.DB,'SELECT * FROM care_paid_ai_jobs WHERE report_id=?',id);return row;
 }
 async function bindCommitment(ctx,enrollment,value){
  if(value===undefined||value===null){if(!enrollment.commitment)throw fail('Create a private enrollment before submitting this report.');return enrollment.commitment;}
@@ -154,14 +156,14 @@ export async function dataAPI(request,env={},services={}){
   if(request.method!=='GET'){checkMutation(request);}
   if(path==='/api/demo/start'||path==='/api/demo/restart'){
    if(request.method!=='POST')return json({error:'Method not allowed'},405);
-   const DB=database(env);const previous=cookieToken(request);if(previous&&path==='/api/demo/start'){const existing=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(previous),'demo');if(existing&&existing.expires_at>now())return json(await payload(await demoContext(DB,existing,request)));}
+   const DB=database(env);const previous=cookieToken(request);if(previous&&path==='/api/demo/start'){const existing=await first(DB,'SELECT * FROM care_workspaces WHERE demo_token_hash=? AND mode=?',await digest(previous),'demo');if(existing&&existing.expires_at>now())return json(await payload(await demoContext(DB,existing,request),env));}
    throttle('demo:'+(request.headers.get('cf-connecting-ip')||'local'),60);
    const token=randomHex(32),workspace={id:crypto.randomUUID(),mode:'demo',expires_at:now()+TTL};
    await run(DB,'INSERT INTO care_workspaces (id,owner_user_id,demo_token_hash,mode,expires_at,created_at) VALUES (?,?,?,?,?,?)',workspace.id,null,await digest(token),'demo',workspace.expires_at,now());await seed(DB,workspace);
-   return json(await payload(await demoContext(DB,workspace,request)),200,{'Set-Cookie':`${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL}`});
+   return json(await payload(await demoContext(DB,workspace,request),env),200,{'Set-Cookie':`${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${TTL}`});
   }
   const ctx=await context(request,env),DB=ctx.DB;
-  if(path==='/api/workspace'){if(request.method!=='GET')return json({error:'Method not allowed'},405);return json(await payload(ctx));}
+  if(path==='/api/workspace'){if(request.method!=='GET')return json({error:'Method not allowed'},405);return json(await payload(ctx,env));}
   if(path==='/api/data/funding'){
    if(ctx.mode!=='demo'||participantView(ctx))throw fail('Demo clinic or sponsor access is required.',403);
    if(request.method==='GET')return json({funding:await demoFunding(DB,ctx.workspace.id)});
@@ -226,7 +228,6 @@ export async function dataAPI(request,env={},services={}){
    if(!changed(updated))throw fail('A transaction was recorded concurrently. Reload the report before continuing.',409,'TRANSACTION_CONFLICT');
    return json({report:reportJSON(await reportFor(ctx,report.id))});
   }
-  if(typeof services.analyze!=='function')throw fail('AI analysis is temporarily unavailable.',503);
   if(report.ai_json){
    await settleDemoCharge(DB,report,'ai');
    const previous=parse(report.reward_decision_json,{}),clinicApproved=report.approval_json&&previous.source==='clinic'&&previous.state==='approved';
@@ -238,6 +239,11 @@ export async function dataAPI(request,env={},services={}){
    if(!report.payment_job&&!chain.fund&&!chain.claim)await run(DB,"UPDATE care_reports SET reward_decision_json=?,payment='On hold',updated_at=? WHERE id=?",JSON.stringify(decision),now(),report.id);
    return json({report:reportJSON(await reportFor(ctx,report.id))});
   }
+  if(report.paid_ai_job||paidAIEnabled(env)){
+   if(!report.paid_ai_job&&body.billing!=='masumi')throw fail('Confirm the sponsored 1-test-USDM analysis request.',400,'PAID_AI_CONFIRMATION');
+   await enqueuePaidAI(DB,env,report);return json({report:reportJSON(await reportFor(ctx,report.id))},202);
+  }
+  if(typeof services.analyze!=='function')throw fail('AI analysis is temporarily unavailable.',503);
   throttle('ai:'+ctx.key,6);
   const lock=await run(DB,"UPDATE care_reports SET ai_status='running',ai_started_at=?,ai_attempts=ai_attempts+1 WHERE id=? AND ai_attempts<5 AND (ai_status!='running' OR ai_started_at<?)",now(),report.id,now()-120);
   if(!changed(lock))throw fail(report.ai_attempts>=5?'Analysis retry limit reached for this report.':'Analysis is already running. Refresh the report shortly.',409,'ANALYSIS_BUSY');
@@ -257,4 +263,20 @@ export async function dataAPI(request,env={},services={}){
   await run(DB,"UPDATE care_reports SET ai_error=?,ai_status='failed',reward_decision_json=CASE WHEN approval_json IS NULL THEN ? ELSE reward_decision_json END,payment=CASE WHEN approval_json IS NULL THEN 'On hold' ELSE payment END,audit_json=json_insert(audit_json,'$[#]',?),updated_at=? WHERE id=?",message,JSON.stringify(decision),event('AI analysis failed. Reward authorization is on hold unless already approved by the clinic.'),now(),report.id);
   return json({error:'ANALYSIS_UNAVAILABLE',message,report:reportJSON(await reportFor(ctx,report.id))},result.status||502);
  }catch(error){const status=error.status||(/must |required|invalid|choose |supports |contain |demo assistant/i.test(error.message||'')?400:500);return json({error:error.code||'WORKSPACE_ERROR',message:status===500?'Workspace service is temporarily unavailable. Please try again.':error.message},status);}
+}
+
+// Called only after authenticated worker receipt/hash checks in paid-ai-jobs.js.
+export async function completePaidAnalysis(DB,env,reportId,resultText,validate){
+ const row=await first(DB,'SELECT * FROM care_reports WHERE id=?',reportId);if(!row)throw fail('Report not found.',404);
+ const ctx={DB,role:'clinic',workspace:{id:row.workspace_id}};
+ const original=JSON.parse(resultText),answers=parse(row.answers_json),program=parse(row.program_json);
+ const checked=validate(original,answers);
+ if(original.programId!==program.id)throw fail('The paid analysis used another program configuration.',409);
+ const ai={...checked,provider:'Masumi / Gemini',model:typeof original.model==='string'?original.model.slice(0,120):'Gemini',programId:program.id,programModelStatus:'demo-untrained',clinical_validation:false,approval:false,created_at:original.created_at||new Date().toISOString()};
+ const decision=rewardDecision(answers,program,ai);
+ const clinical=decision.clinicalReview==='priority_review'?'Priority review':decision.clinicalReview==='review_requested'?'Review requested':'Routine';
+ await run(DB,"UPDATE care_reports SET ai_json=?,ai_status='complete',ai_error='',clinical=CASE WHEN clinical IN ('Awaiting review','Routine','Review requested','Priority review') THEN ? ELSE clinical END,reward_decision_json=CASE WHEN approval_json IS NULL THEN ? ELSE reward_decision_json END,payment=CASE WHEN approval_json IS NULL AND ?='on_hold' THEN 'On hold' ELSE payment END,audit_json=json_insert(audit_json,'$[#]',?),updated_at=? WHERE id=? AND ai_json IS NULL",JSON.stringify(ai),clinical,JSON.stringify(decision),decision.state,event('Paid Masumi analysis received. Its result hash was confirmed on Cardano Preprod.'),now(),row.id);
+ await settleDemoCharge(DB,row,'ai');
+ const fresh=await reportFor(ctx,row.id),previous=parse(fresh.reward_decision_json,{}),clinicApproved=fresh.approval_json&&previous.source==='clinic'&&previous.state==='approved';
+ if(decision.state==='approved'||clinicApproved)await approveReport(ctx,fresh,clinicApproved?previous:decision,clinicApproved?'clinic':'policy',env);
 }

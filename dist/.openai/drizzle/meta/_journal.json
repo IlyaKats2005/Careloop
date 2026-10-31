@@ -36,6 +36,13 @@
       "when": 1793380200004,
       "tag": "0004_demo_funding",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793448000000,
+      "tag": "0005_paid_ai_jobs",
+      "breakpoints": true
     }
   ]
 }

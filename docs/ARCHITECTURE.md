@@ -18,7 +18,7 @@ These are distinct balances, not interchangeable names for the same money.
 | --- | --- | --- |
 | App demo credits | Resettable budget accounting in the hosted database | A new demo has 1,000 credits: 750 unassigned, 50 for AI and 200 for clients. Sponsor actions allocate or release unused credits for each purpose separately. |
 | Participant reward funds | Actual disposable test ADA on Cardano Preprod | The sponsor wallet funds a contract with 20 test ADA. A verified claim transfers 2 test ADA to a participant. Fees come from the sponsor wallet. |
-| Separate paid AI job | Masumi escrow payment on Preprod | The standalone integration purchases an analysis for 1 test USDM, then verifies the seller's settlement. It is not automatically purchased for every website form. |
+| Paid report analysis | Masumi escrow payment on Preprod | In paid mode, requesting sponsored analysis creates one 1-test-USDM job per saved report; its result commitment and seller settlement have independent receipts. |
 
 For app accounting, one AI credit is reserved before analysis and spent only when analysis succeeds; a failed request releases it. Two client credits are committed when an approved reward enters payment processing and spent only after its matching on-chain payment is verified.
 
@@ -27,7 +27,7 @@ Clicking the sponsor's allocation controls reserves **database credits**. It doe
 ## What happens from check-in to reward
 
 1. **Registration and enrollment.** A participant saves a Preprod receiving address in their profile. Joining a program creates a private enrollment secret in the browser and a public commitment for the server. Being signed in identifies the profile; it does not recover a missing enrollment secret or give the app the wallet's spending key.
-2. **Report submission.** The backend stores the answers and the program configuration used for that report. It checks enrollment, reporting period and duplicate submissions. Gemini receives the fictional answers for analysis; server policy decides completion eligibility. Unresolved contradictions or missing information can place the reward on hold.
+2. **Report submission.** The backend stores the answers and the program configuration used for that report. It checks enrollment, reporting period and duplicate submissions. In paid mode the participant requests sponsored analysis. The worker purchases the report’s Masumi escrow and waits for confirmed funding before Gemini receives the fictional answers. It commits the result hash on Cardano; only the matching result with a confirmed commitment reaches server completion policy. Seller withdrawal is tracked separately and may settle later. Unresolved contradictions or missing information can place the reward on hold.
 3. **Approval batch.** The application constructs a Merkle root for approved enrollment commitments scoped to the program, period and amount. The demonstration uses a depth-three tree with eight leaves, including synthetic entries. This root represents off-chain authorization; the chain does not independently judge the answers.
 4. **Sponsor funding.** The relay reads the hosted queue, builds and signs a real Cardano transaction, and locks 20 test ADA in a parameterized Aiken/Plutus V3 contract. A unique state token identifies that pool. The UI waits for confirmed funding before advancing.
 5. **Private proof in the browser.** The participant's browser uses the local secret and membership path to generate a Groth16 proof over BLS12-381. The proof binds eligibility to the approved root, program, reporting period, reward amount and recipient payment key. Keep My rewards, My reports or the report open during this step.
@@ -89,7 +89,7 @@ The goal is for participants to inspect sponsor allocations for their clinic whi
 
 | Question | What the current demo actually provides |
 | --- | --- |
-| Can sponsors and clinics see allocated and remaining budgets? | Yes. Their panels show separate AI and client accounting from the shared database. These credits are not on-chain balances. |
+| Can sponsors and clinics see actual payments? | Yes. Their panels show report-specific test-USDM escrow/settlement and test-ADA pool/payout receipts. Totals cover the workspace, not the sponsor’s whole wallet. Optional allocation controls remain off-chain credits. |
 | Can a participant see their reward and actual contract funding? | Yes. Their report exposes funding and claim transaction links and verified payment progress. Public chain data can be checked independently. |
 | Can a signed-in participant browse the whole clinic's sponsor allocation? | No. A participant-facing aggregate allocation panel is not implemented. Demo role switching can show the Sponsor panel during a presentation. |
 | Are answers, patient IDs and enrollment secrets published to Cardano? | The reward transactions do not include the questionnaire, account identity, enrollment secret or membership path. Public transaction metadata can still be linkable. |
@@ -98,10 +98,10 @@ The goal is for participants to inspect sponsor allocations for their clinic whi
 
 Thus the defensible privacy statement is: **“The blockchain can verify reward eligibility without publishing the medical report or the participant's enrollment secret.”** Clinic-only access to raw reports would require a different data-access and AI-processing design; it cannot be claimed merely because a ZK proof is present.
 
-## The separate AI payment
+## The AI-service payment
 
-The hosted form calls Gemini directly using a server-side API key. Its AI credits are application accounting, not automatic Masumi payments.
+In paid mode the website creates one sponsored 1-test-USDM job for each explicitly requested report analysis. The durable worker uses the registered seller and Masumi Payment Service, and only the matching confirmed result reaches completion policy. Final seller settlement is tracked separately. Optional app credits remain off-chain accounting.
 
-The independent [`integrations/masumi`](../integrations/masumi/README.md) service demonstrates a paid questionnaire-analysis job. It requests Masumi escrow funding, waits for the matching funding confirmation, runs the analysis, commits a result hash and verifies settlement of 1 test USDM to the seller. This is a second Cardano payment purpose alongside participant rewards. It has its own local services and setup.
+The [`integrations/masumi`](../integrations/masumi/README.md) package contains the website worker and the original standalone Standard API service. It requests Masumi escrow funding, waits for the matching funding confirmation, runs the analysis, commits a result hash and verifies settlement of 1 test USDM to the seller. This is a second Cardano payment purpose alongside participant rewards. It has its own local services and setup.
 
 The repository includes [an earlier paid AI receipt and reward evidence](preprod-demo.json) and [a confirmed automatic website reward](live-form-payment.json). These establish completed historical demonstrations; a new report must show its own matching confirmed transaction.

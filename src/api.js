@@ -2,7 +2,8 @@ import {answerFields,validateSubmissionValidity} from './submission-validity.js'
 import {NETWORK,NETWORK_MAGIC} from './network.js';
 import {DEFAULT_PROGRAM_ID,getProgram,normalizeProgram,programAIContext} from './programs.js';
 import {authAPI} from './auth.js';
-import {dataAPI} from './data-api.js';
+import {dataAPI,completePaidAnalysis} from './data-api.js';
+import {paidAIWorkerAPI,paidAIEnabled} from './paid-ai-jobs.js';
 import {sponsorAPI} from './payment-jobs.js';
 const priorities=new Set(['routine','review_requested','priority_review']);
 const allowedFields=answerFields;
@@ -82,10 +83,11 @@ function reserveAnalysisQuota(request,env){
 export async function api(request,env={}){
   const url=new URL(request.url);
   const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  const paidResponse=await paidAIWorkerAPI(request,env,{complete:(id,result)=>completePaidAnalysis(env.DB,env,id,result,validateOutput)});if(paidResponse)return paidResponse;
   const sponsorResponse=await sponsorAPI(request,env);if(sponsorResponse)return sponsorResponse;
   const authResponse=await authAPI(request,env);if(authResponse)return authResponse;
   const dataResponse=await dataAPI(request,env,{analyze:(answers,settings,fetcher,program)=>reserveAnalysisQuota(request,settings)||analyze(answers,settings,fetcher,program)});if(dataResponse)return dataResponse;
-  if(url.pathname==='/api/status')return json({ai:{configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser proof generation + Cardano contract verification',setup:'development-only'},chain:{connected:false,network:NETWORK.toLowerCase(),networkMagic:NETWORK_MAGIC,masumiNetwork:NETWORK.toLowerCase(),message:'Patient rewards and Masumi target Cardano Preprod. Open a saved report to follow sponsor funding, browser proof generation and the confirmed reward claim.'},mode:'fictional-demo'});
+  if(url.pathname==='/api/status')return json({ai:{billing:paidAIEnabled(env)?'masumi':'direct',configured:!!(env.AI_PROVIDER==='gemini'?env.GEMINI_API_KEY:env.OPENROUTER_API_KEY),provider:env.AI_PROVIDER||'openrouter',model:env.AI_MODEL||(env.AI_PROVIDER==='gemini'?'gemini-2.5-flash':'openrouter/free')},zk:{type:'Groth16 / BLS12-381',verification:'browser proof generation + Cardano contract verification',setup:'development-only'},chain:{connected:false,network:NETWORK.toLowerCase(),networkMagic:NETWORK_MAGIC,masumiNetwork:NETWORK.toLowerCase(),message:'Patient rewards and Masumi target Cardano Preprod. Open a saved report to follow sponsor funding, browser proof generation and the confirmed reward claim.'},mode:'fictional-demo'});
   if(url.pathname!=='/api/analyze')return json({error:'Not found'},404);
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   if(request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return json({error:'Origin not allowed'},403);

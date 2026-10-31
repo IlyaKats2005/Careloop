@@ -24,7 +24,7 @@ Careloop connects these tasks: configurable questionnaires, an AI-assisted revie
 - Per-program questionnaire and AI configuration, retaining the exact configuration used for each submitted report.
 - Automatic reward authorization for reports that meet the configured completion policy, with visible holds for reports requiring clarification. Clinical concerns remain separate from reward disqualification.
 - A bounded Preprod sponsor relay, browser-generated zero-knowledge proofs, exact 2-test-ADA payouts and confirmed transaction evidence.
-- A separate Masumi-paid questionnaire-analysis service, with result hashes and an independently checked seller receipt.
+- Website-linked Masumi-paid questionnaire analysis: one paid job per report, confirmed result hashes and independently checked seller receipts. The original standalone service remains reproducible.
 - A blockchain visualization that distinguishes illustrative walkthroughs, observed live state and historical evidence.
 - Separate sponsor budgets for AI and participant rewards; three enrolled demo clients and one ready to enroll; saved receiving wallets; persistent refresh and an explicit restart control.
 
@@ -51,7 +51,7 @@ A buyer funds Masumi escrow for a fictional questionnaire-analysis job. The serv
 - Completed Standard API job: `1224781e-666a-42f4-b01e-0b5ebfe24373`.
 - Public input/result evidence: [masumi-paid-job.json](evidence/masumi-paid-job.json). Its input and result hashes match the saved job/payment record. The withdrawal's valid contract status and exact seller net receipt were independently checked again via Blockfrost on 31 October 2026.
 
-The current hosted form calls Gemini directly. Do not claim each website submission purchases a Masumi job. The paid service and participant reward are separate integrations.
+The website now supports an explicit sponsored-analysis request for each saved report. With paid mode enabled, it purchases Masumi escrow once, then uses the matching confirmed result for reward eligibility. AI-service payment and participant reward remain separate transactions and assets. The historical receipt above belongs to the earlier standalone run; inspect each new report for its own receipts.
 
 ### Participant reward: custom privacy/payment flow
 

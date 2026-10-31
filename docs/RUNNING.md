@@ -121,9 +121,13 @@ Committed WASM, proving key, verification key and contract blueprint are suffici
 
 Verify historical paid-job hashes with [the public evidence instructions](evidence/README.md). Historical receipts prove those recorded runs, not a newly submitted report.
 
-## Separate paid AI service
+## Paid AI for website reports
 
-The website calls Gemini directly; the participant relay does not buy Masumi jobs. To reproduce the **1-test-USDM** paid analysis, follow [the Masumi integration guide](../integrations/masumi/README.md), including your own Payment Service, database, seller registration and buyer funding. Its Standard API route does not require a Sokosumi Coworker account; the Coworker worker is an alternative route. These are not bundled public services.
+The default fresh clone uses direct model analysis. To connect website reports to **1-test-USDM Masumi escrow**, follow [Connect website reports to paid analysis](../integrations/masumi/README.md#connect-website-reports-to-paid-analysis). Configure your own Payment Service, database, registered seller, funded buyer and report worker, then set `PAID_AI_ENABLED=true` in the app’s environment and restart the app. The report presents **Request sponsored analysis · 1 test USDM**; the sponsor pays, not the participant.
+
+Keep the app, Masumi Payment Service, Masumi report worker and participant reward relay running. Browser proof generation remains in the participant tab. These are separate services; a live website alone does not mean either payment worker is running. The Standard API/Coworker demonstration routes are optional alternatives and are not required by the website worker.
+
+The report shows escrow funding, confirmed result and seller settlement separately. Results can authorize a reward before the later seller withdrawal. The worker’s current escrow unlock is 36 minutes after creating the quote; actual settlement additionally waits for network processing. Record waiting-time edits honestly in the demo video.
 
 ## Host your own installation
 

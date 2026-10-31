@@ -9,6 +9,7 @@
   "scripts": {
     "worker": "node --use-env-proxy --env-file=.env worker.mjs",
     "api": "node --use-env-proxy --env-file=.env --env-file=.local/mps-runtime.env agent-api.mjs",
-    "test": "node --test *.test.mjs"
+    "test": "node --test *.test.mjs",
+    "reports": "node --use-env-proxy --env-file=.env --env-file=.local/mps.env --env-file=.local/mps-runtime.env report-worker.mjs"
   }
 }
