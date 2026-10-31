@@ -1,6 +1,7 @@
 import {bech32} from '@scure/base';
 import {field,hash} from './zk-core.js';
 import {publicRewardDeployment} from './reward-status.js';
+import {rewardDecision} from './reward-policy.js';
 
 const now=()=>Math.floor(Date.now()/1000);
 const fail=(message,status=400,code='PAYMENT_INPUT')=>Object.assign(new Error(message),{status,code});
@@ -43,6 +44,22 @@ export async function enqueuePayment(DB,env,report){
  const job=await first(DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',report.id);
  if(!job)throw fail('The sponsor’s demonstration budget is fully allocated. The report remains approved; no payment has been sent.',409,'SPONSOR_BUDGET');
  return job;
+}
+
+async function resumeBudgetBlockedPayments(DB,env){
+ const used=await first(DB,'SELECT count(*) AS n FROM care_payment_jobs');
+ const available=maxJobs(env)-Number(used.n);if(available<=0)return 0;
+ const {results}=await DB.prepare("SELECT r.* FROM care_reports r JOIN care_workspaces w ON w.id=r.workspace_id WHERE r.payout_error!='' AND r.approval_json IS NOT NULL AND json_extract(r.reward_decision_json,'$.state')='approved' AND json_extract(r.chain_json,'$.fund') IS NULL AND json_extract(r.chain_json,'$.claim') IS NULL AND (w.expires_at IS NULL OR w.expires_at>?) AND NOT EXISTS (SELECT 1 FROM care_payment_jobs j WHERE j.report_id=r.id) ORDER BY r.created_at,r.id LIMIT ?").bind(now(),Math.min(available,20)).all();
+ let resumed=0;
+ for(const report of results){
+  const decision=parse(report.reward_decision_json);
+  if(decision.source!=='clinic'&&rewardDecision(parse(report.answers_json),parse(report.program_json),parse(report.ai_json)).state!=='approved')continue;
+  try{
+   const job=await enqueuePayment(DB,env,report);
+   if(job){await run(DB,"UPDATE care_reports SET payout_error='',updated_at=? WHERE id=?",now(),report.id);resumed++;}
+  }catch(error){if(error.code==='SPONSOR_BUDGET')break;throw error;}
+ }
+ return resumed;
 }
 
 export async function submitPaymentProof(DB,report,body){
@@ -103,7 +120,7 @@ export async function sponsorAPI(request,env={}){
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   await authorized(request,env);const body=await readBody(request);
   if(path==='/api/sponsor/heartbeat'){
-   await run(DB,"INSERT INTO care_sponsor_relay (id,last_seen) VALUES ('relay',?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen",now());return json({ok:true,network:'Preprod'});
+   await run(DB,"INSERT INTO care_sponsor_relay (id,last_seen) VALUES ('relay',?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen",now());const resumed=await resumeBudgetBlockedPayments(DB,env);return json({ok:true,network:'Preprod',resumed});
   }
   if(path==='/api/sponsor/lease'){
    if(typeof body.workerId!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(body.workerId))throw fail('Invalid worker identity.');

@@ -4,6 +4,8 @@
 
 Open **Demo readiness**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Do not consume the final budget slot in rehearsal if you need another new payout for judging.
 
+When the sponsor allowance is increased, the worker automatically queues previously approved reports that were blocked by that limit. It rechecks policy eligibility and preserves existing payment jobs and transaction references. No further clinic approval is needed. A funded wallet and the worker's local spending allowance are also required.
+
 ## Four clients and restart
 
 Enter the participant or clinic demo and open **Demo clients**. Alex Morgan, Maya Chen and Noah Bennett are already enrolled; Sam Rivera is registered but has not joined a program. All four have distinct Preprod receiving wallets saved in their profiles. Wallet addresses are public; their recovery keys are kept outside the app source.

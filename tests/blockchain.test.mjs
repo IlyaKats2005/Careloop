@@ -21,3 +21,18 @@ test('funded report shows real funding hash while a proof is generated privately
 test('submitted claim is pending even if a receipt is missing or unrelated',()=>{for(const payout of [{state:'submitted',fundTxHash:hashA,claimTxHash:hashB},{state:'confirmed',fundTxHash:hashA,claimTxHash:hashB,receipt:{verified:true,txHash:hashA,network:'Preprod',amount:'2000000',recipientAddress:recipient}}]){const html=renderReport(report(payout));assert.match(html,new RegExp('/transaction/'+hashB));assert.doesNotMatch(html,/Paid · 2 test ADA|Inspect confirmed payout/);}});
 test('confirmed payout requires a receipt bound to transaction, recipient, amount and network',()=>{const receipt={verified:true,txHash:hashB,network:'Preprod',amount:'2000000',recipientAddress:recipient,poolRemainingLovelace:'18000000'};const valid=report({state:'confirmed',fundTxHash:hashA,claimTxHash:hashB,receipt});const html=renderReport(valid);assert.match(html,/Paid · 2 test ADA/);assert.match(html,/Inspect confirmed payout/);assert.match(html,/>18<span>test ADA<\/span>/);for(const changed of [{verified:false},{txHash:hashA},{network:'Mainnet'},{amount:'1'},{recipientAddress:'another'}]){const invalid=renderReport(report({...valid.payout,receipt:{...receipt,...changed}}));assert.doesNotMatch(invalid,/Paid · 2 test ADA|Inspect confirmed payout/);}});
 test('live report hook wins over an older report list and does not reveal private fields',()=>{const window={setTimeout,clearTimeout,careloopLiveReport:()=>report({state:'queued'})};vm.runInNewContext(source,{window});window.careloopBlockchain.setMode('live');const html=window.careloopBlockchain.render({reports:[{...report({state:'failed'}),secret:'do-not-render',answers:{notes:'private notes'}}]});assert.match(html,/Your reward is queued/);assert.doesNotMatch(html,/private notes|do-not-render|payment needs attention/);});
+
+test('exhausted sponsor allowance is a blocked payment, not clinic review or an in-progress transaction',()=>{
+ const value=report({state:'not_requested',blockedReason:'sponsor_limit',error:'The sponsor’s demonstration budget is fully allocated. The report remains approved; no payment has been sent.'},{state:'approved',source:'policy',reasons:['Completion checks passed.']});
+ const html=renderReport(value),state=lab().liveState(value);
+ assert.equal(state.blocked,true);assert.equal(state.funded,false);assert.equal(state.paid,false);
+ assert.match(html,/Approved · payment blocked by sponsor limit/);assert.match(html,/No clinic approval is needed/);
+ assert.match(html,/No funding or claim transaction has started/);assert.match(html,/Sponsor funding · blocked/);
+ assert.doesNotMatch(html,/Payment in progress|Waiting for real proof|class="current"|bc-live-reasons/);
+ assert.ok(html.indexOf('budget is fully allocated')<html.indexOf('bc-live-flow'));
+});
+
+test('an approved report with no queued payment does not advertise ongoing funding',()=>{
+ const html=renderReport(report({state:'not_requested'}));assert.match(html,/Approved · payment not started/);assert.match(html,/No clinic approval is needed/i);
+ assert.doesNotMatch(html,/Payment in progress|class="current"|Waiting for real proof/);
+});

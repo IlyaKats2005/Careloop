@@ -71,6 +71,40 @@ test('only authenticated relay may lease and update, and heartbeat expires',asyn
  }finally{DB.close();}
 });
 
+test('raising the sponsor allowance resumes approved reports once without clinic reapproval',async()=>{
+ const {DB,env}=await setup(1);try{
+  await enqueuePayment(DB,env,await report(DB,1));
+  const blocked=await report(DB,2);
+  const answers={status:'Okay',impact:'Not at all',hydration:'Yes',contact:'No',symptoms:{},urgent:[]};
+  const ai={review_priority:'routine',missing_information:[],possible_contradictions:[],submission_validity:{status:'clear',issues:[]}};
+  await dbRun(DB,"UPDATE care_reports SET answers_json=?,ai_json=?,reward_decision_json=?,payout_error='Sponsor budget fully allocated' WHERE id=?",JSON.stringify(answers),JSON.stringify(ai),JSON.stringify({state:'approved',source:'policy',version:2}),blocked.id);
+  assert.equal((await call(env,'heartbeat')).body.resumed,0);
+  env.SPONSOR_MAX_JOBS='2';
+  const concurrent=await Promise.all([call(env,'heartbeat'),call(env,'heartbeat')]);
+  assert.ok(concurrent.every(r=>r.status===200));
+  const saved=await dbFirst(DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',blocked.id);
+  assert.equal(saved.state,'queued');assert.equal(saved.recipient_address,recipient);
+  assert.equal((await dbFirst(DB,'SELECT count(*) AS n FROM care_payment_jobs')).n,2);
+  assert.equal((await dbFirst(DB,'SELECT payout_error FROM care_reports WHERE id=?',blocked.id)).payout_error,'');
+  assert.equal((await call(env,'heartbeat')).body.resumed,0);
+  assert.equal((await dbFirst(DB,'SELECT * FROM care_payment_jobs WHERE report_id=?',blocked.id)).id,saved.id);
+ }finally{DB.close();}
+});
+
+test('budget recovery never queues a held, invalid, expired or manually funded report',async()=>{
+ const {DB,env}=await setup(10);try{
+  for(let i=1;i<=4;i++){
+   await report(DB,i);
+   await dbRun(DB,"UPDATE care_reports SET reward_decision_json=?,payout_error='Sponsor budget fully allocated' WHERE id=?",JSON.stringify({state:i===1?'on_hold':'approved',source:i===2?'policy':'clinic'}),'R-'+i);
+  }
+  await dbRun(DB,'UPDATE care_reports SET chain_json=? WHERE id=?',JSON.stringify({fund:{txHash:'a'.repeat(64)}}),'R-3');
+  await dbRun(DB,"INSERT INTO care_workspaces (id,mode,expires_at,created_at) VALUES ('expired','demo',1,1)");
+  await dbRun(DB,"UPDATE care_reports SET workspace_id='expired' WHERE id='R-4'");
+  assert.equal((await call(env,'heartbeat')).body.resumed,0);
+  assert.equal((await dbFirst(DB,'SELECT count(*) AS n FROM care_payment_jobs')).n,0);
+ }finally{DB.close();}
+});
+
 test('funding hash is durable before broadcast and expired lease never creates another job',async()=>{
  const {DB,env}=await setup();try{
   const r=await report(DB),job=await enqueuePayment(DB,env,r),leased=(await call(env,'lease',{workerId:'one'})).body;

@@ -268,3 +268,20 @@ test('four-client UI supports enrolling Sam and restarting against the real work
  assert.equal(requests.filter(r=>r.path==='/api/demo/restart').length,1);
  const fresh=await workspace({backend,storage:ui.storage});await fresh.run("enterWorkspace('patient')");assert.equal(fresh.data('cloudWorkspace.id'),ui.data('cloudWorkspace.id'));assert.equal(fresh.data('demoClientId'),'alex');
 });
+
+test('an automatically approved report hides clinic approval controls and explains the sponsor limit',async()=>{
+ const backend=service();livePolicy(backend,'not_requested');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
+ const report=backend.state.reports[0];report.rewardDecision.source='policy';report.payout.error='The sponsor’s demonstration budget is fully allocated. The report remains approved; no payment has been sent.';report.payout.blockedReason='sponsor_limit';
+ await ui.run("switchRole('clinic')");ui.run(`openReport(${JSON.stringify(report.id)})`);
+ assert.match(ui.html(),/Automatic checks approved this report. No clinic approval is needed/);assert.match(ui.html(),/Approved · payment blocked by sponsor limit/);
+ assert.match(ui.html(),/no funding transaction or claim has started/);assert.doesNotMatch(ui.html(),/id="eligible"|Approve demo reward|Approve after clarification|A saved receiving address is required/);
+ const count=backend.requests.filter(r=>r.path.endsWith('/review')).length;ui.element('#eligible').checked=true;await ui.run("clinicAction('approve')");assert.equal(backend.requests.filter(r=>r.path.endsWith('/review')).length,count);
+ ui.element('#decision').value='Routine clinic review recorded.';await ui.run("clinicAction('review')");assert.equal(ui.data('reports[0].clinical'),'Reviewed');
+ ui.run("nav('rewards')");assert.match(ui.html(),/Approved · payment blocked by sponsor limit/);
+});
+
+test('clinic approval controls remain available to resolve an actual answer hold',async()=>{
+ const backend=service();livePolicy(backend,'on_hold');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');
+ const id=backend.state.reports[0].id;await ui.run("switchRole('clinic')");ui.run(`openReport(${JSON.stringify(id)})`);
+ assert.match(ui.html(),/Automatic approval is on hold/);assert.match(ui.html(),/Approve after clarification/);assert.match(ui.html(),/id="eligible"/);
+});
