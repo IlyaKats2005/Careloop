@@ -25,6 +25,6 @@ services:
       - key: SPONSOR_STATE_DIR
         value: /var/data/sponsor-relay
       - key: SPONSOR_MAX_JOBS
-        value: '4'
+        value: '10'
       - key: SPONSOR_MAX_SPEND_ADA
-        value: '100'
+        value: '250'

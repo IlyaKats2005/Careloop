@@ -1,6 +1,6 @@
 # Render deployment proposal
 
-Recommended configuration: one Frankfurt background worker, `1c-2g` (2 GB RAM), with a 1 GB persistent disk. Published base prices checked on 30 October 2026 are $25/month compute + $0.25/month disk, before tax or additional usage. The 2 GB choice provides memory headroom for transaction construction and verification; actual cloud memory consumption is not yet measured. This hosts only the sponsor relay; it does not move the separate Masumi/PostgreSQL services.
+Recommended configuration: one Frankfurt background worker, `1c-2g` (2 GB RAM), with a 1 GB persistent disk. Published base prices checked on 31 October 2026 are $25/month compute + $0.25/month disk, before tax or additional usage. The 2 GB choice provides memory headroom for transaction construction and verification; actual cloud memory consumption is not yet measured. This hosts only the sponsor relay; it does not move the separate Masumi/PostgreSQL services.
 
 Sources: https://render.com/pricing and https://render.com/docs/blueprint-spec
 
@@ -11,4 +11,4 @@ Sources: https://render.com/pricing and https://render.com/docs/blueprint-spec
 5. Set `SPONSOR_START_ENABLED=true` and redeploy. Keep one instance. Check logs, the website's fresh heartbeat, budget and a new live payment. The wrapper refuses to start without the migrated journal.
 6. Open the participant check-in. Verify a new approved report reaches confirmed payment; use a separate participant/program for a genuine hold result. Record the actual transaction hashes and show the live report.
 
-The Docker package is an alternative for a VPS. This Render configuration uses the native Node runtime, so local Docker access is not required. No account, paid service or remote upload has been created by this preparation.
+The Docker package is an alternative for a VPS. This Render configuration uses the native Node runtime, so local Docker access is not required. No account or paid service has been created by this preparation. The current worker allowance is ten funded reports and at most 250 test ADA, including the preserved history. Deployment is blocked until a Render account is connected and its charges are authorized. The active Mac relay still owns its journal; do not enable the cloud signer until that relay is stopped and the journal has been transferred. The local GitHub CLI credential also needs renewed access before the latest source can be published to that repository.
