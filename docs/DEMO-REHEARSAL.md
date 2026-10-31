@@ -1,5 +1,7 @@
 # Live rehearsal and recording
 
+For the current submission video, use the [ready-to-record transcript and timed screen sequence](VIDEO-TRANSCRIPT.md). It follows one website report through both payments; the hold case below is optional rehearsal material.
+
 ## Gate before recording
 
 Open **Demo tools → Check payment service → Check service**. The sponsor must be **Online** with remaining new-report budget. An unavailable or stale service is not ready. Do not consume the final budget slot in rehearsal if you need another new payout for judging. See [the run guide](RUNNING.md) for the exact operator command.

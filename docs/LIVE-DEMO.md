@@ -1,5 +1,7 @@
 # Show a real check-in and payment
 
+For the current submission video, use the [278-word transcript and timed screen sequence](VIDEO-TRANSCRIPT.md), which follows one report through its automatic paid analysis and participant reward.
+
 Open [the live app](https://careloop-study-prototype.perasperaadastra3008.chatgpt.site/) and use the actual **Check-in** screen, the report's status and its fresh explorer links. **Demo tools → Payment walkthrough** is optional supporting material; its animation does not count as a paid submission. [Exact local-service commands](RUNNING.md) and [the blockchain explanation](ARCHITECTURE.md) are documented separately.
 
 ## Prepare before the audience arrives

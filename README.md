@@ -100,7 +100,8 @@ Open **Sponsor** for actual Masumi/test-USDM and reward/test-ADA totals with rep
 Open **Demo tools → Check payment service → Check service** to check the sponsor heartbeat and remaining payment allowance. Check-in includes enrollment creation and private recovery controls before submission. **My rewards** and **My reports** update automatically and can generate the participant's pending proof while open. Historical receipts are labeled separately from the current report's payment.
 
 - [Always-on worker deployment](deploy/README.md): Docker Compose package with persistent journal, restart policy and heartbeat health check. Requires a separately provisioned host.
-- [Live rehearsal and ≤2.5-minute recording guide](docs/DEMO-REHEARSAL.md): both real outcomes and narration.
+- [Ready-to-record video transcript](docs/VIDEO-TRANSCRIPT.md): 278 words, a timed screen sequence and Mac microphone setup.
+- [Live rehearsal guide](docs/DEMO-REHEARSAL.md): preparation, successful payments and held reports.
 
 ## Run the sponsor relay
 
