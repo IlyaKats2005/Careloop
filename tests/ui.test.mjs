@@ -324,3 +324,37 @@ test('reload restores an account screen and leaving it does not silently reopen 
  const signedInAgain=await workspace({backend,session,storage:reloaded.storage,browserReload:true});assert.equal(signedInAgain.data('workspaceMode'),'account');
  await signedInAgain.run('signOut()');assert.equal(signedInAgain.storage.has('careloop-navigation-v1'),false);
 });
+
+test('My rewards refreshes queued payments and creates their proof without opening a report',async()=>{
+ const backend=service();livePolicy(backend,'queued');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ ui.run("nav('rewards')");await tick();assert.equal(ui.data('selected'),null);assert.match(ui.html(),/Rewards update automatically/);assert.equal(ui.proofCalls.length,0);
+ const report=backend.state.reports[0];report.payout.state='awaiting_proof';report.payout.fundTxHash='b'.repeat(64);
+ await ui.run('pollRewardList(payoutWatch)');
+ assert.equal(ui.data('page'),'rewards');assert.equal(ui.data('selected'),null);assert.equal(ui.proofCalls.length,1);assert.equal(report.payout.state,'claim_queued');assert.match(ui.html(),/Claim queued/);
+ report.payout.state='submitted';report.payout.claimTxHash='a'.repeat(64);await ui.run('pollRewardList(payoutWatch)');assert.doesNotMatch(ui.html(),/Paid · 2 test ADA/);
+ report.payout.state='confirmed';report.payout.receipt={verified:true,recipientAddress:'addr_test1fixture',txHash:'a'.repeat(64),amount:'2000000',network:'Preprod'};
+ await ui.run('pollRewardList(payoutWatch)');assert.match(ui.html(),/Paid · 2 test ADA/);assert.equal(ui.proofCalls.length,1);assert.equal(backend.requests.filter(r=>r.path.endsWith('/analyze')).length,1);
+ const restored=await workspace({backend,storage:ui.storage,browserReload:true});await tick();assert.equal(restored.data('page'),'rewards');assert.match(restored.html(),/Paid · 2 test ADA/);assert.equal(restored.proofCalls.length,0);
+});
+
+test('a delayed reward-list response cannot generate a proof after switching workspaces',async()=>{
+ const backend=service();livePolicy(backend,'queued');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ backend.state.reports[0].payout.state='awaiting_proof';const gate=pending();let wait=true;
+ backend.hooks.request=async call=>{if(call.path==='/api/workspace'&&wait){wait=false;await gate.promise;}};
+ ui.run("nav('rewards')");await tick();await ui.run("switchRole('clinic')");gate.resolve();await tick();await tick();
+ assert.equal(ui.data('role'),'clinic');assert.equal(ui.proofCalls.length,0);assert.equal(backend.requests.filter(r=>r.path.endsWith('/proof')).length,0);
+});
+
+test('reward-list proof errors stay visible and retry once without duplicate claims',async()=>{
+ const backend=service();livePolicy(backend,'queued');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ backend.state.reports[0].payout.state='awaiting_proof';ui.run("const originalProofBuilder=window.careloopBuildSponsoredProof;window.careloopBuildSponsoredProof=async()=>{throw Error('Restore this enrollment recovery file first.');};nav('rewards')");await tick();await tick();
+ assert.match(ui.html(),/Private proof needs attention/);assert.match(ui.html(),/Restore this enrollment recovery file/);assert.match(ui.html(),/Retry payment progress/);
+ assert.equal(backend.requests.filter(r=>r.path.endsWith('/proof')).length,0);
+ ui.run('window.careloopBuildSponsoredProof=originalProofBuilder;retryRewardList()');await tick();await tick();await ui.run('pollRewardList(payoutWatch)');
+ assert.equal(backend.requests.filter(r=>r.path.endsWith('/proof')).length,1);assert.match(ui.html(),/Claim queued/);assert.doesNotMatch(ui.html(),/Restore this enrollment recovery file/);
+});
+
+test('held rewards stay on hold when the rewards page is open',async()=>{
+ const backend=service();livePolicy(backend,'on_hold');const ui=await workspace({backend});await ui.run("enterWorkspace('patient')");fillReport(ui);await ui.run('submitReport()');await tick();
+ ui.run("nav('rewards')");await tick();await ui.run('pollRewardList(payoutWatch)');assert.match(ui.html(),/On hold/);assert.equal(ui.proofCalls.length,0);
+});

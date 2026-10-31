@@ -52,7 +52,7 @@ function restoreNavigation(saved){
  if(page==='reportDetail'&&!selected)page='reports';
  render();watchFunding();
  if(page==='demoReady')void loadSponsorStatus();
- if(role==='patient'&&selected&&['reportDetail','blockchain'].includes(page)){if(page==='blockchain')window.careloopBlockchain?.setMode?.('live');startPayoutWatch(selected);}
+ if(role==='patient'&&selected&&['reportDetail','blockchain'].includes(page)){if(page==='blockchain')window.careloopBlockchain?.setMode?.('live');startPayoutWatch(selected);}else startRewardListWatch();
 }
 function updateReport(report){if(!report||typeof report.id!=='string')throw Error('The saved report was not returned.');const at=reports.findIndex(r=>r.id===report.id);if(at<0)reports.unshift(report);else reports[at]=report;return report}
 function publicCommitment(){window.zkEnroll?.();const value=window.careloopCommitment;if(typeof value!=='string'&&typeof value!=='bigint')throw Error('The private enrollment is not ready. Open the reward workspace and try again.');return String(value)}
@@ -71,7 +71,7 @@ function findReport(id){return reports.find(r=>r.id===id)||examples().find(r=>r.
 function badge(t){return '<span class="pill '+(/Pending|Awaiting|Priority|Symptoms flagged|Review requested|Clarification|failed|concern|On hold|blocked|limit reached|needs attention|Checking|confirming|funding|queued/i.test(t)?'warn':/Not |Demo|Example|training|untrained/i.test(t)?'neutral':'')+'">'+esc(t)+'</span>'}
 function btn(t,a,cls=''){return '<button class="btn '+cls+'" onclick="'+esc(a)+'">'+t+'</button>'}
 function notify(t){$('#toast').textContent=t;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4500)}
-function nav(p){stopPayoutWatch();if(page==='blockchain'&&p!=='blockchain')window.careloopBlockchain?.stop?.();page=p;selected=p==='blockchain'?(selected||activeReports()[0]?.id||null):null;persist();render();window.scrollTo(0,0);if(p==='blockchain'&&selected&&role==='patient')startPayoutWatch(selected);if(['checkin','demoReady','sponsor'].includes(p))void loadSponsorStatus();watchFunding()}
+function nav(p){stopPayoutWatch();if(page==='blockchain'&&p!=='blockchain')window.careloopBlockchain?.stop?.();page=p;selected=p==='blockchain'?(selected||activeReports()[0]?.id||null):null;persist();render();window.scrollTo(0,0);if(p==='blockchain'&&selected&&role==='patient')startPayoutWatch(selected);else startRewardListWatch();if(['checkin','demoReady','sponsor'].includes(p))void loadSponsorStatus();watchFunding()}
 async function enterWorkspace(r,mode='demo'){
  if(workspaceLoading)return;if(window.careloopRewardBusy?.()){notify('Wait for the current wallet action to finish before changing workspaces.');return}stopPayoutWatch();clearTimeout(fundingTimer);funding=null;fundingError='';const preferredProgram=mode==='restart-demo'?null:programId;if(mode==='restart-demo'){step=0;filter='All';editingProgramId=null;fundingAmounts={ai:10,rewards:20};fundingActiveBucket=null;demoClientId='alex';sessionStorage.setItem('careloop-demo-client','alex');}const revision=++workspaceRevision;profile=null;demoClients=[];availablePrograms=[];aiBusy.clear();proofErrors.clear();sponsorStatus=null;reviewBusy.clear();workspaceLoading=true;workspaceError='';entered=true;programs=[];reports=[];enrollments=[];drafts={};draft=null;programId=null;selected=null;
  workspaceMode=auth.signedIn&&mode==='signed-in'?'account':'demo';entryMode=workspaceMode==='account'?'signed-in':'demo';role=workspaceMode==='account'?auth.user.role:['clinic','sponsor'].includes(r)?r:'patient';page=role==='sponsor'?'sponsor':role==='clinic'?'queue':'overview';render();
@@ -109,7 +109,7 @@ function content(){
  if(page==='demoClients'&&workspaceMode==='demo')return banner+demoClientPanel();
  if(page==='programEditor'&&role==='clinic')return banner+programEditor();
  if(!currentProgram())return banner+emptyWorkspace();
- let body;if(page==='checkin')body=checkin();else if(page==='reports')body=heading('YOUR CONTRIBUTION','Your saved reports','AI analysis, clinic review and payment are tracked separately.')+reportTable(activeReports(),false)+exampleSection();else if(page==='rewards')body=rewards();else if(page==='queue')body=selected?detail():queue();else if(page==='reportDetail')body=detail();else if(page==='program')body=program();else if(page==='done'){const r=findReport(selected);body=heading('CHECK-IN SAVED','Your report is saved online.','Follow this report’s real checks and Cardano payment below.')+(r?workflow(r)+livePayoutCard(r)+aiCard(r):'')+'<details class="card funding-explainer" style="margin-top:18px"><summary>Back up your reward enrollment</summary><p>Your report is saved online. Your private enrollment key stays on this device. Keep its recovery file to use this enrollment and claim rewards from another device.</p>'+btn('Download private recovery file','zkBackup()','secondary')+'<p class="muted">Keep this file private. Restore it in My rewards before submitting from a new device.</p></details><div class="actions">'+btn('View my reports',"nav('reports')")+(workspaceMode==='demo'?btn('Open clinic demo',"switchRole('clinic')",'secondary'):'')+'</div>';}else body=overview();return banner+body;
+ let body;if(page==='checkin')body=checkin();else if(page==='reports')body=heading('YOUR CONTRIBUTION','Your saved reports','AI analysis, clinic review and payment are tracked separately.')+rewardListNotice()+reportTable(activeReports(),false)+exampleSection();else if(page==='rewards')body=rewards();else if(page==='queue')body=selected?detail():queue();else if(page==='reportDetail')body=detail();else if(page==='program')body=program();else if(page==='done'){const r=findReport(selected);body=heading('CHECK-IN SAVED','Your report is saved online.','Follow this report’s real checks and Cardano payment below.')+(r?workflow(r)+livePayoutCard(r)+aiCard(r):'')+'<details class="card funding-explainer" style="margin-top:18px"><summary>Back up your reward enrollment</summary><p>Your report is saved online. Your private enrollment key stays on this device. Keep its recovery file to use this enrollment and claim rewards from another device.</p>'+btn('Download private recovery file','zkBackup()','secondary')+'<p class="muted">Keep this file private. Restore it in My rewards before submitting from a new device.</p></details><div class="actions">'+btn('View my reports',"nav('reports')")+(workspaceMode==='demo'?btn('Open clinic demo',"switchRole('clinic')",'secondary'):'')+'</div>';}else body=overview();return banner+body;
 }
 function joinCard(){return '<section class="card"><h2>Join a program</h2><p>Enter the invitation code provided by your clinic. Your report will be visible to that clinic.</p><div class="actions"><input id="joinCode" aria-label="Program invitation code" placeholder="Invitation code" autocomplete="off"><button class="btn" onclick="joinProgram()" '+(joining?'disabled':'')+'>'+(joining?'Joining…':'Join program')+'</button></div><p id="joinError" class="error" role="alert"></p>'+(workspaceMode==='demo'?'<div class="info"><strong>Demo program invitations</strong>'+availablePrograms.filter(p=>p.active&&!enrollments.some(e=>e.programId===p.id)).map(p=>'<p>'+esc(p.name)+'<br><code>'+esc(p.invitationCode)+'</code> '+btn('Use invitation',"useDemoInvitation('"+p.id+"')",'secondary small-button')+'</p>').join('')+'</div>':'')+'</section>'}
 function useDemoInvitation(id){const p=availablePrograms.find(p=>p.id===id);if(p)$('#joinCode').value=p.invitationCode;}
@@ -171,6 +171,7 @@ function rewardState(r){
  if(p&&p.state!=='not_requested'){
   const hash=validTx(p.claimTxHash)?p.claimTxHash:null;
   if(p.state==='confirmed'&&p.receipt?.verified===true&&hash&&p.receipt.recipientAddress===p.recipientAddress&&p.receipt.txHash===hash&&p.receipt.amount==='2000000'&&p.receipt.network==='Preprod')return {state:'confirmed',label:'Paid · 2 test ADA (Preprod)',txHash:hash};
+  if(p.state==='awaiting_proof'&&proofErrors.has(r.id))return {state:'waiting',label:'Private proof needs attention'};
   const labels={queued:'Reward queued',funding:'Sponsor funding',awaiting_proof:'Creating private proof',claim_queued:'Claim queued',submitted:'Claim submitted · confirming',confirmed:'Confirmation being verified',failed:'Payment needs attention'};
   return {state:p.state==='submitted'||p.state==='confirmed'?'submitted':'waiting',label:labels[p.state]||'Payment processing',...(hash?{txHash:hash}:{})};
  }
@@ -217,18 +218,49 @@ async function pollPayout(watch){
   const result=await requestJSON(dataURL('/api/data/reports/'+encodeURIComponent(watch.id)+'/status'));if(!valid())return;report=updateReport(result.report);if(report.payout?.state!=='awaiting_proof')proofErrors.delete(report.id);render();
   try{const status=await requestJSON('/api/sponsor/status');if(valid()){sponsorStatus=status;render();}}catch{if(valid()){sponsorStatus={...sponsorStatus,online:null,unavailable:true};render();}}
   if(!valid())return;
-  if(report.payout?.state==='awaiting_proof'&&!proofBusy.has(report.id)&&!proofErrors.has(report.id)){
-   proofBusy.add(report.id);render();
-   try{
-    if(typeof window.careloopBuildSponsoredProof!=='function')throw Error('The private proof module is not ready. Refresh and retry.');
-    const proof=await window.careloopBuildSponsoredProof(report,report.payout.recipientAddress||report.recipientAddress);if(!valid())return;
-    const saved=await requestJSON(dataURL('/api/data/reports/'+encodeURIComponent(report.id)+'/proof'),'POST',proof);if(!valid())return;report=updateReport(saved.report);
-   }catch(e){if(valid())proofErrors.set(report.id,e.message)}finally{proofBusy.delete(report.id);if(valid())render()}
-  }
+  report=await continueSponsoredPayment(report,valid);
  }catch(e){if(valid())proofErrors.set(watch.id,'Live status could not be refreshed: '+e.message)}
  if(!valid())return;render();
  if(report&&['confirmed','failed'].includes(report.payout?.state)||report?.rewardDecision?.state==='on_hold')return;
  payoutTimer=setTimeout(()=>{payoutTimer=null;void pollPayout(watch)},4000);
+}
+async function continueSponsoredPayment(report,valid){
+ if(!valid()||report.payout?.state!=='awaiting_proof'||!rewardAuthorized(report)||report.rewardDecision?.state==='on_hold'||proofBusy.has(report.id)||proofErrors.has(report.id))return report;
+ proofBusy.add(report.id);render();
+ try{
+  if(typeof window.careloopBuildSponsoredProof!=='function')throw Error('The private proof module is not ready. Reload this page and retry.');
+  const proof=await window.careloopBuildSponsoredProof(report,report.payout.recipientAddress||report.recipientAddress);if(!valid())return report;
+  const saved=await requestJSON(dataURL('/api/data/reports/'+encodeURIComponent(report.id)+'/proof'),'POST',proof);if(!valid())return report;
+  return updateReport(saved.report);
+ }catch(e){if(valid())proofErrors.set(report.id,e.message);return report;}finally{proofBusy.delete(report.id);if(valid())render();}
+}
+function startRewardListWatch(){
+ if(!entered||role!=='patient'||!['rewards','reports'].includes(page))return;
+ stopPayoutWatch();payoutWatch={list:true,revision:workspaceRevision,epoch:payoutEpoch,programId,error:''};void pollRewardList(payoutWatch);
+}
+function retryRewardList(){for(const r of activeReports())proofErrors.delete(r.id);startRewardListWatch();}
+async function pollRewardList(watch){
+ const valid=()=>payoutWatch===watch&&watch.list&&watch.revision===workspaceRevision&&watch.epoch===payoutEpoch&&watch.programId===programId&&entered&&role==='patient'&&['rewards','reports'].includes(page);
+ if(!valid()||watch.running)return;watch.running=true;
+ const snapshot=()=>JSON.stringify([activeReports(),sponsorStatus?.online,sponsorStatus?.unavailable,watch.error,activeReports().map(r=>proofErrors.get(r.id))]),before=snapshot();
+ try{
+  const data=await requestJSON(dataURL('/api/workspace'));if(!valid())return;applyWorkspace(data);if(!valid())return;watch.error='';
+  try{const status=await requestJSON('/api/sponsor/status');if(valid())sponsorStatus=status;}catch{if(valid())sponsorStatus={...sponsorStatus,online:null,unavailable:true};}
+  if(!valid())return;
+  for(const report of activeReports()){
+   if(!valid())return;
+   if(report.payout?.state!=='awaiting_proof')proofErrors.delete(report.id);
+   await continueSponsoredPayment(report,valid);
+  }
+ }catch(e){if(valid())watch.error='Could not update rewards: '+e.message;}finally{
+  watch.running=false;
+  if(valid()){if(snapshot()!==before)render();payoutTimer=setTimeout(()=>{payoutTimer=null;void pollRewardList(watch);},4000);}
+ }
+}
+function rewardListNotice(){
+ if(role!=='patient')return '';
+ const pending=activeReports().some(r=>rewardAuthorized(r)&&rewardState(r).state!=='confirmed'),errors=activeReports().filter(r=>proofErrors.has(r.id));
+ return (pending?'<p class="info" role="status">Rewards update automatically. Keep this page open while your private proof and payment are processed.</p>':'')+(pending&&sponsorStatus?.online===false?'<p class="error">The sponsor service is offline. Your approved reward will wait until it reconnects.</p>':'')+(payoutWatch?.list&&payoutWatch.error?'<p class="error" role="alert">'+esc(payoutWatch.error)+'</p>':'')+errors.map(r=>'<p class="error" role="alert">'+esc(r.period)+': '+esc(proofErrors.get(r.id))+'</p>').join('')+(errors.length||payoutWatch?.list&&payoutWatch.error?btn('Retry payment progress','retryRewardList()','secondary'):'');
 }
 function showLiveBlockchain(id){selected=id;window.careloopBlockchain?.setMode?.('live');nav('blockchain');}
 window.careloopRefreshLiveReport=()=>{const r=reports.find(r=>r.id===selected)||activeReports()[0];if(r){selected=r.id;startPayoutWatch(r.id);}};
@@ -268,7 +300,7 @@ function detail(){const r=findReport(selected);if(!r)return heading('REPORT','Re
 async function clinicAction(action){if(role!=='clinic')return;const r=findReport(selected);if(!r||r.isExample||reviewBusy.has(r.id))return;const note=$('#decision')?.value?.trim()||'',eligible=!!$('#eligible')?.checked;if(action==='approve'&&!eligible){$('#clinicError').textContent='Confirm eligibility and duplicate checking first.';return}if(action==='approve'&&!needsClinicRewardReview(r))return;if(action!=='approve'&&!note){$('#decision').focus();notify('Add a review note first.');return}const revision=workspaceRevision;reviewBusy.add(r.id);$('#clinicError').textContent='Saving clinic decision…';try{const saved=await requestJSON(dataURL('/api/data/reports/'+encodeURIComponent(r.id)+'/review'),'POST',{action,note,eligible});if(revision!==workspaceRevision)return;updateReport(saved.report);notify(action==='approve'?'Approval saved. Reports with a receiving address enter the sponsored payment queue.':'Clinic review saved online.');render();}catch(e){if(revision===workspaceRevision)$('#clinicError').textContent=e.message}finally{reviewBusy.delete(r.id)}}
 function openRewards(id){const r=findReport(id);if(!r||r.isExample)return;nav('rewards');}
 function proofExplanation(){return '<details style="margin-top:18px"><summary>When is the ZK proof used?</summary><p>After approval, the sponsor funds the reward contract. Your browser then creates a proof that you hold an approved enrollment, bound to the receiving address saved with your report.</p><p>The sponsor submits that proof with the claim. The Cardano contract checks it and prevents a repeat claim before releasing 2 test ADA to that address in the same transaction.</p><p>The proof keeps your enrollment secret and Merkle path off chain. It does not prove that your questionnaire answers are true. The recipient address and payment remain public.</p></details>';}
-function rewards(){return heading(role==='clinic'?'CLINIC PAYMENTS':'YOUR REWARDS',role==='clinic'?'Client payments':'Your rewards','Open a report to follow its automatic payment or resolve a hold.','Cardano Preprod')+reportTable(activeReports(),role==='clinic')+proofExplanation()+(role==='patient'?(window.careloopRecoveryPanel?window.careloopRecoveryPanel():'<p>Enrollment recovery is loading.</p>'):'');}
+function rewards(){return heading(role==='clinic'?'CLINIC PAYMENTS':'YOUR REWARDS',role==='clinic'?'Client payments':'Your rewards',role==='patient'?'Your rewards are sent to your saved wallet. Payment progress updates here automatically.':'Track approved rewards and confirmed client payments.','Cardano Preprod')+rewardListNotice()+reportTable(activeReports(),role==='clinic')+proofExplanation()+(role==='patient'?(window.careloopRecoveryPanel?window.careloopRecoveryPanel():'<p>Enrollment recovery is loading.</p>'):'');}
 function validitySummary(r){const v=r.ai?.submission_validity;return '<h3>Answer validity</h3><p>'+esc(!v?'This older analysis did not include a separate answer-validity check.':v.status==='needs_clarification'?'Clarification needed. The completion check holds automatic rewards.':'The AI flagged no answer-validity issues. The completion check also applies the app’s rules.')+'</p>'+(v?.issues||[]).map(i=>'<div class="audit"><strong>'+esc(i.source_question)+'</strong>: “'+esc(i.quote)+'”<br>'+esc(i.reason)+'</div>').join('');}
 function aiCard(r){const a=r.ai;return '<section class="card" style="margin-top:18px"><div class="eyebrow">AI REVIEW · DEMO</div><h2>AI analysis</h2>'+badge(aiState(r))+'<p>Checks completeness and consistency, then suggests what the clinic should review.</p>'+(a?'<p class="muted">Saved analysis</p>':btn(aiBusy.has(r.id)?'Analyzing…':'Retry analysis',"runAI('"+r.id+"')",'secondary'))+(r.aiError?'<p class="error">'+esc(r.aiError)+'</p><p>The report remains saved online. Clinic review can continue while AI is unavailable.</p>':'')+(a?'<div class="summary"><strong>'+esc(a.review_priority==='priority_review'?'Symptoms flagged · clinical review suggested':a.review_priority==='review_requested'?'Clinical review suggested':'Routine clinical review')+' · AI suggestion only</strong><p class="muted">This describes follow-up for the reported symptoms. It does not validate the answers or approve payment. No clinician has been notified.</p>'+validitySummary(r)+'<h3>Report summary</h3><p>'+esc(a.summary)+'</p><details><summary>View supporting answers and AI details</summary>'+a.findings.map(f=>'<div class="audit"><strong>'+esc(f.source_question)+'</strong>: “'+esc(f.quote)+'”<br>'+esc(f.observation)+'</div>').join('')+'<p>Missing information: '+esc(a.missing_information.join(', ')||'None identified')+'</p><p>Possible contradictions: '+esc(a.possible_contradictions.join('; ')||'None identified')+'</p><small>Model: '+esc(a.model)+' · not clinically validated</small></details></div>':'')+'</section>'}
 async function runAI(id){const r=reports.find(x=>x.id===id);if(!r||r.ai||aiBusy.has(id))return;const revision=workspaceRevision;aiBusy.add(id);r.aiError='';render();try{const saved=await requestJSON(dataURL('/api/data/reports/'+encodeURIComponent(id)+'/analyze'),'POST',{});if(revision===workspaceRevision)updateReport(saved.report);}catch(e){if(revision!==workspaceRevision)return;if(e.data?.report)updateReport(e.data.report);const current=reports.find(x=>x.id===id);if(current)current.aiError=e.message;}finally{aiBusy.delete(id);if(revision===workspaceRevision){render();if(role==='patient'&&selected===id&&['done','reportDetail','blockchain'].includes(page))startPayoutWatch(id);}}}
